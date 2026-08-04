@@ -1,9 +1,9 @@
 {
-  "name": "decimen-optical-transfer",
+  "name": "optical-voice",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.1.0",
   "license": "MIT",
-  "description": "Offline file and text transfer using fountain-coded animated QR codes — screen to camera, no network.",
+  "description": "Experimental live voice communication over animated optical codes using screens and cameras.",
   "type": "module",
   "scripts": {
     "dev": "vite",
