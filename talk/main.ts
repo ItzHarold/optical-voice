@@ -304,15 +304,19 @@ function captureLoop(gen: number): void {
     if (!running || gen !== generation) return;
     const next = () => {
       if (!running || gen !== generation) return;
-      if (!workerBusy && video.videoWidth && video.videoHeight && worker) {
-        grab.width = video.videoWidth;
-        grab.height = video.videoHeight;
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!workerBusy && width && height && worker) {
+        if (grab.width !== width || grab.height !== height) {
+          grab.width = width;
+          grab.height = height;
+        }
         const ctx = grab.getContext("2d", { willReadFrequently: true })!;
-        ctx.drawImage(video, 0, 0);
-        const image = ctx.getImageData(0, 0, grab.width, grab.height);
+        ctx.drawImage(video, 0, 0, width, height);
+        const image = ctx.getImageData(0, 0, width, height);
         workerBusy = true;
         worker.postMessage(
-          { id: frameId++, buf: image.data.buffer, w: grab.width, h: grab.height },
+          { id: frameId++, buf: image.data.buffer, w: width, h: height },
           [image.data.buffer],
         );
       }
