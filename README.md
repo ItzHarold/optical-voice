@@ -1,89 +1,123 @@
-# Decimen Optical Transfer: fountain-coded QR file transfer
+# Optical Voice
 
-Send a file between two devices using nothing but a **screen and a camera**.
-One page displays the file as an endless stream of animated QR codes; another
-device points its camera at it and reconstructs the file. **No network path
-between the devices, no app, no pairing, no permissions beyond the camera.**
-The payload travels as light.
+**Live voice communication carried entirely through animated visual codes.**
 
-## Try it
+Optical Voice is an open-source experiment led by **Harold Ponte da Costa** to make real-time speech possible between nearby devices using only their screens, cameras, microphones, and speakers—without Wi-Fi, Bluetooth, cellular service, pairing, or an intermediary server.
 
-### **→ [decimen.app](https://decimen.app/)**
+Each device will display an encoded optical stream while its camera reads the other device's stream. The long-term goal is a two-way conversation that travels directly from screen to camera.
 
-Open it on both devices and go — nothing to install. Works offline after the
-first visit, and installs as an app on both iOS and Android if you want it on
-a home screen.
+> [!IMPORTANT]
+> Live voice is the project goal, not the current state. The inherited Decimen code currently transfers complete files and text through animated QR codes. Development will progress from recorded voice messages to one-way live speech, push-to-talk, and finally experimental full-duplex audio.
 
-Files up to 64 MB (or a pasted text snippet), filename and media type
-preserved, gzip only when it helps, SHA-256 verified before anything is
-offered — and received video plays right in the page. Extracted from a larger
-experiment that reached **128 KB/s phone-to-phone**.
+## Project status
 
-<p align="center">
-  <img src="docs/receiving.jpg" width="420"
-       alt="Phone receiving a file over light: 130.5 KB/s goodput, halfway through decoding the sender's animated QR stream" />
-</p>
-<p align="center"><em>Mid-transfer: a phone pulling a file out of the air at 130 KB/s.</em></p>
+| Capability | Status |
+| --- | --- |
+| Fountain-coded optical file transfer | Available from upstream |
+| Recorded voice-message transfer | Planned baseline |
+| One-way live microphone audio | Planned |
+| Optical push-to-talk | Planned |
+| Simultaneous two-way conversation | Research milestone |
 
-Neither mode is encrypted: whatever is on the sending screen is readable by
-any camera pointed at it. The property this gives you is no network, not
-confidentiality — see [privacy](docs/user/privacy.md).
+See the [roadmap](ROADMAP.md) for the staged delivery plan.
 
-## Documentation
+## How it should work
 
-**Using it** — [quick start](docs/user/quick-start.md) ·
-[sending](docs/user/sending.md) · [receiving](docs/user/receiving.md) ·
-[troubleshooting](docs/user/troubleshooting.md) ·
-[install & offline](docs/user/install-and-offline.md) ·
-[privacy](docs/user/privacy.md)
+```text
+microphone
+  → speech compression
+  → short, independently recoverable audio groups
+  → fountain/error-corrected optical packets
+  → animated visual stream
+  → camera decoding on the other device
+  → jitter buffer
+  → audio playback
+```
 
-**How it's built** — [architecture](docs/technical/architecture.md) ·
-[protocol](docs/technical/protocol.md) ·
-[platform quirks](docs/technical/platform-quirks.md) ·
-[build & release](docs/technical/build-and-release.md)
+A live stream cannot be treated as one endlessly growing file. Audio must be divided into short groups with sequence numbers and playback deadlines. Missing data should be recovered when possible and skipped when it arrives too late, rather than blocking the conversation.
 
-The short version of the protocol: a screen-to-camera link has no
-back-channel, so the sender streams fountain-coded frames ([Luby
-transform](https://en.wikipedia.org/wiki/Luby_transform_code)) — the receiver
-collects *any* ~K·1.15 distinct frames in any order and peels the file out.
-Dropped frames cost time, never correctness.
+The first practical target is **headphone-based optical push-to-talk**. This avoids acoustic echo while proving the core live transport.
 
-## Run it yourself
+## Why this project exists
+
+Current device-to-device communication normally depends on a radio link or network service. Optical Voice explores a different local channel:
+
+- direct line-of-sight communication;
+- no network path between participants;
+- no account, pairing, or discovery service;
+- a channel that is physically visible and intentionally directional;
+- an open protocol that can be studied, measured, and improved.
+
+This is an experimental communication system, not a claim that optical QR communication is faster or more convenient than conventional networking.
+
+## Technical foundation
+
+The project is forked from [Decimen Optical Transfer](https://github.com/bashalarmistalt/decimen-optical-transfer), created by Evan Crawley (Bash Alarmist).
+
+Decimen provides the existing foundation for:
+
+- animated QR generation;
+- camera capture and WASM QR decoding;
+- Luby Transform fountain coding;
+- dropped-frame tolerance;
+- deterministic wire-format handling;
+- browser/PWA support across desktop and mobile devices.
+
+Optical Voice will introduce a separate live-media protocol, streaming audio pipeline, jitter buffering, playback scheduling, session control, and bidirectional communication mode.
+
+## Development principles
+
+1. **Measure before optimizing.** Latency, decode rate, loss, CPU load, and thermal behaviour must be observable.
+2. **Build in stages.** Recorded audio first, then one-way live audio, then push-to-talk, then full duplex.
+3. **Keep the protocol documented.** Every wire-format change must be reflected in the protocol specification and test vectors.
+4. **Fail gracefully.** Late or missing audio should reduce quality rather than freeze the stream.
+5. **Preserve attribution.** Upstream work remains clearly credited and licensed.
+
+## Run locally
 
 ```bash
 npm install
-npm run dev               # https dev server with HMR
-npm run serve             # build, then serve the production bundle
-npm run demo              # demo mode: only the bundled payloads can be sent
-npm test                  # golden wire-format vectors and unit tests
-npm run build             # the hosted site → dist/
-npm run build:standalone  # both self-contained pages → dist-standalone/
-npm run build:all         # everything
+npm run dev
 ```
 
-Open `https://localhost:5173/send/` on the sending device and the printed
-`Network` URL on the receiving phone (accept the self-signed certificate
-once). Walkthrough: [quick start](docs/user/quick-start.md).
+The development server uses HTTPS because browser camera and microphone access require a secure context on devices other than `localhost`.
 
-## Similar projects
+Existing upstream commands remain available:
 
-The concept here was arrived at independently. It turns out several people
-have had similar ideas, and their takes are all worth a look:
+```bash
+npm test
+npm run build
+npm run build:standalone
+npm run build:all
+```
 
-- [mohankumarelec/airgapped-qr-code-transfer](https://github.com/mohankumarelec/airgapped-qr-code-transfer):
-  browser-based QR file transfer with compression and sequential chunking.
-  Discovered after publicly demoing this project; convergent evolution in
-  action.
-- [divan/txqr](https://github.com/divan/txqr) (2018): animated QR plus
-  fountain codes in Go, with two excellent write-ups on why fountain coding
-  beats sequential looping.
-- [sz3/libcimbar](https://github.com/sz3/libcimbar): goes past QR entirely
-  with a custom high-density color code purpose-built for this channel.
+## Documentation
 
-Built by [Evan Crawley (Bash Alarmist)](https://www.linkedin.com/in/evan-crawley), with
-[node-qrcode](https://github.com/soldair/node-qrcode) and
-[zxing-wasm](https://github.com/Sec-ant/zxing-wasm).
+- [Roadmap](ROADMAP.md)
+- [Live audio architecture](docs/voice/architecture.md)
+- [Protocol direction](docs/voice/protocol.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+
+The inherited Decimen documentation remains under `docs/user` and `docs/technical` while the new live-audio design is developed under `docs/voice`.
+
+## Contributing
+
+The project is in an early research and prototyping phase. Contributions involving browser audio, WebCodecs, Opus, real-time media, forward-error correction, QR/camera performance, latency measurement, accessibility, and mobile testing are especially useful.
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+## Maintainer and attribution
+
+**Optical Voice project lead and maintainer:**  
+Harold Ponte da Costa — [@ItzHarold](https://github.com/ItzHarold)
+
+**Original optical-transfer foundation:**  
+Decimen Optical Transfer by Evan Crawley (Bash Alarmist).
+
+This repository retains the upstream Git history and MIT license. Copyright in upstream code remains with its original author. New Optical Voice contributions belong to their respective contributors and are distributed under the same MIT license.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
