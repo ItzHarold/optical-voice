@@ -22,7 +22,8 @@ const MAX_RX_STREAMS = 4;
 const PLAYBACK_LEAD = 0.4;
 
 const canvas = document.getElementById("qr") as HTMLCanvasElement;
-const video = document.getElementById("camera") as HTMLVideoElement;
+const video = document.getElementById("camera-source") as HTMLVideoElement;
+const preview = document.getElementById("camera-preview") as HTMLCanvasElement;
 const cameraCard = document.getElementById("camera-card")!;
 const scanStat = document.getElementById("scan-stat")!;
 const startButton = document.getElementById("start") as HTMLButtonElement;
@@ -96,6 +97,48 @@ function drawIdle(label = "READY"): void {
   ctx.fillText(label, size / 2, size / 2 - 4);
   ctx.font = "15px system-ui, sans-serif";
   ctx.fillText("press start on both devices", size / 2, size / 2 + 28);
+}
+
+function clearCameraPreview(): void {
+  const ctx = preview.getContext("2d")!;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, 0, preview.width, preview.height);
+}
+
+function drawCameraPreview(sourceWidth: number, sourceHeight: number): void {
+  const ctx = preview.getContext("2d")!;
+  const targetWidth = preview.width;
+  const targetHeight = preview.height;
+  const sourceAspect = sourceWidth / sourceHeight;
+  const targetAspect = targetWidth / targetHeight;
+  let sourceX = 0;
+  let sourceY = 0;
+  let cropWidth = sourceWidth;
+  let cropHeight = sourceHeight;
+
+  if (sourceAspect > targetAspect) {
+    cropWidth = sourceHeight * targetAspect;
+    sourceX = (sourceWidth - cropWidth) / 2;
+  } else {
+    cropHeight = sourceWidth / targetAspect;
+    sourceY = (sourceHeight - cropHeight) / 2;
+  }
+
+  ctx.save();
+  ctx.setTransform(-1, 0, 0, 1, targetWidth, 0);
+  ctx.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    targetWidth,
+    targetHeight,
+  );
+  ctx.restore();
 }
 
 function recorderMime(): string {
@@ -310,12 +353,18 @@ async function scheduleAudio(streamId: number, remoteGroupId: number, audio: Uin
 function captureLoop(gen: number): void {
   const grab = document.createElement("canvas");
   let frameId = 0;
+  let previewFrame = 0;
   const schedule = () => {
     if (!running || gen !== generation) return;
     const next = () => {
       if (!running || gen !== generation) return;
       const width = video.videoWidth;
       const height = video.videoHeight;
+
+      if (width && height && previewFrame++ % 2 === 0) {
+        drawCameraPreview(width, height);
+      }
+
       if (!workerBusy && width && height && worker) {
         const useCenterCrop = frameId % 4 !== 0;
         let sourceX = 0;
@@ -445,6 +494,7 @@ function stop(): void {
   running = false;
   media?.getTracks().forEach((track) => track.stop());
   media = null;
+  video.pause();
   video.srcObject = null;
   worker?.terminate();
   worker = null;
@@ -461,6 +511,7 @@ function stop(): void {
   startButton.disabled = false;
   startButton.textContent = "Start conversation";
   muteButton.hidden = true;
+  clearCameraPreview();
   drawIdle();
   setStatus("Stopped. Press start on both devices when they are facing each other.");
 }
@@ -475,4 +526,5 @@ function toggleMute(): void {
 startButton.addEventListener("click", () => void start());
 muteButton.addEventListener("click", toggleMute);
 window.setInterval(updateStats, 500);
+clearCameraPreview();
 drawIdle();
