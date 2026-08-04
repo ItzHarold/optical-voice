@@ -13,16 +13,18 @@ import { packVoiceChunk, unpackVoiceChunk } from "../shared/voice";
 import { requestScreenWakeLock } from "../shared/wake-lock";
 
 const GROUP_MS = 600;
-const TX_FPS = 20;
-const FRAME_BYTES = 1000;
+const TX_FPS = 15;
+const FRAME_BYTES = 640;
 const BLOCK_LEN = blockLength(FRAME_BYTES);
 const MARGIN = 4;
 const MAX_TX_QUEUE = 3;
 const MAX_RX_STREAMS = 4;
-const PLAYBACK_LEAD = 0.35;
+const PLAYBACK_LEAD = 0.4;
 
 const canvas = document.getElementById("qr") as HTMLCanvasElement;
 const video = document.getElementById("camera") as HTMLVideoElement;
+const cameraCard = document.getElementById("camera-card")!;
+const scanStat = document.getElementById("scan-stat")!;
 const startButton = document.getElementById("start") as HTMLButtonElement;
 const muteButton = document.getElementById("mute") as HTMLButtonElement;
 const status = document.getElementById("status")!;
@@ -65,6 +67,8 @@ let lastRemoteGroup = new Map<number, number>();
 let sentGroups = 0;
 let receivedGroups = 0;
 let droppedGroups = 0;
+let decodedFrames = 0;
+let lastDecodedAt = 0;
 
 function randomId(): number {
   return (crypto.getRandomValues(new Uint16Array(1))[0]! || 1) & 0xffff;
@@ -114,7 +118,7 @@ function recordGroup(stream: MediaStream, mimeType: string, gen: number): Promis
       resolve(blob);
     };
     const chunks: Blob[] = [];
-    const options: MediaRecorderOptions = { audioBitsPerSecond: 16_000 };
+    const options: MediaRecorderOptions = { audioBitsPerSecond: 12_000 };
     if (mimeType) options.mimeType = mimeType;
     let recorder: MediaRecorder;
     try {
@@ -178,7 +182,7 @@ function enqueueVoice(payload: Uint8Array): void {
     encoder,
     header,
     seq: 0,
-    framesLeft: Math.max(8, Math.ceil(encoder.k * 2.2) + 3),
+    framesLeft: Math.max(9, Math.ceil(encoder.k * 2.5) + 3),
   });
   while (txQueue.length > MAX_TX_QUEUE) {
     txQueue.shift();
@@ -207,7 +211,11 @@ function drawQr(image: ImageData): void {
   staging.width = image.width;
   staging.height = image.height;
   staging.getContext("2d")!.putImageData(image, 0, 0);
-  const cssSize = Math.max(240, Math.min(520, window.innerWidth - 40, window.innerHeight * 0.56));
+  const cssSize = Math.min(
+    620,
+    Math.max(220, window.innerWidth - 28),
+    Math.max(260, window.innerHeight * 0.68),
+  );
   const dpr = window.devicePixelRatio || 1;
   const scale = Math.max(1, Math.floor((cssSize * dpr) / image.width));
   canvas.width = image.width * scale;
@@ -245,6 +253,8 @@ function trimReceiverMaps(): void {
 function onDecoded(bytes: Uint8Array): void {
   const parsed = parseFrame(bytes);
   if (!parsed) return;
+  decodedFrames++;
+  lastDecodedAt = performance.now();
   const identity = streamIdentity(parsed.header);
   if (completedStreams.has(identity)) return;
   let state = rxStreams.get(identity);
@@ -307,16 +317,41 @@ function captureLoop(gen: number): void {
       const width = video.videoWidth;
       const height = video.videoHeight;
       if (!workerBusy && width && height && worker) {
-        if (grab.width !== width || grab.height !== height) {
-          grab.width = width;
-          grab.height = height;
+        const useCenterCrop = frameId % 4 !== 0;
+        let sourceX = 0;
+        let sourceY = 0;
+        let sourceWidth = width;
+        let sourceHeight = height;
+        if (useCenterCrop) {
+          const side = Math.floor(Math.min(width, height) * 0.88);
+          sourceX = Math.floor((width - side) / 2);
+          sourceY = Math.floor((height - side) / 2);
+          sourceWidth = side;
+          sourceHeight = side;
+        }
+        const scale = Math.min(1, 900 / Math.max(sourceWidth, sourceHeight));
+        const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+        const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+        if (grab.width !== targetWidth || grab.height !== targetHeight) {
+          grab.width = targetWidth;
+          grab.height = targetHeight;
         }
         const ctx = grab.getContext("2d", { willReadFrequently: true })!;
-        ctx.drawImage(video, 0, 0, width, height);
-        const image = ctx.getImageData(0, 0, width, height);
+        ctx.drawImage(
+          video,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight,
+          0,
+          0,
+          targetWidth,
+          targetHeight,
+        );
+        const image = ctx.getImageData(0, 0, targetWidth, targetHeight);
         workerBusy = true;
         worker.postMessage(
-          { id: frameId++, buf: image.data.buffer, w: width, h: height },
+          { id: frameId++, buf: image.data.buffer, w: targetWidth, h: targetHeight },
           [image.data.buffer],
         );
       }
@@ -334,6 +369,9 @@ function updateStats(): void {
   rxStat.textContent = `${receivedGroups} received`;
   const queued = audioContext ? Math.max(0, nextPlayAt - audioContext.currentTime) : 0;
   bufferStat.textContent = `${queued.toFixed(1)} s buffer`;
+  const reading = running && performance.now() - lastDecodedAt < 1800;
+  cameraCard.classList.toggle("locked", reading);
+  scanStat.textContent = !running ? "Idle" : reading ? `Reading · ${decodedFrames}` : "Searching…";
 }
 
 async function start(): Promise<void> {
@@ -353,7 +391,7 @@ async function start(): Promise<void> {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: {
         facingMode: { ideal: "user" },
-        width: { ideal: 1280 },
+        width: { ideal: 960 },
         height: { ideal: 720 },
         frameRate: { ideal: 30 },
       },
@@ -378,6 +416,8 @@ async function start(): Promise<void> {
     sentGroups = 0;
     receivedGroups = 0;
     droppedGroups = 0;
+    decodedFrames = 0;
+    lastDecodedAt = 0;
     nextPlayAt = 0;
     txQueue = [];
     currentTx = null;
@@ -389,7 +429,7 @@ async function start(): Promise<void> {
     startButton.textContent = "Stop conversation";
     muteButton.hidden = false;
     muteButton.textContent = "Mute microphone";
-    setStatus("Live. Face both screens toward each other; headphones work best.");
+    setStatus("Live. Center the other QR in the receiver guide until it says Reading.");
     captureLoop(gen);
     transmitLoop(gen);
     void recordLoop(gen);
@@ -414,6 +454,10 @@ function stop(): void {
   txQueue = [];
   currentTx = null;
   rxStreams.clear();
+  decodedFrames = 0;
+  lastDecodedAt = 0;
+  cameraCard.classList.remove("locked");
+  scanStat.textContent = "Idle";
   startButton.disabled = false;
   startButton.textContent = "Start conversation";
   muteButton.hidden = true;
