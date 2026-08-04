@@ -22,36 +22,20 @@ import { emitAs } from "./build/emit-as";
 import { rootPwaHead } from "./build/root-pwa-head";
 import { licenseBanner } from "./build/license-banner";
 
-// Where the site is published, used only to make the social-card URLs absolute
-// — scrapers are inconsistent about resolving relative ones. Override with
-// VITE_SITE_URL when deploying somewhere else; nothing else depends on it, and
-// the build still works under any subpath.
-const SITE_URL = process.env.VITE_SITE_URL ?? "https://decimen.app/";
+// Where the site is published, used only to make social-card URLs absolute.
+const SITE_URL = process.env.VITE_SITE_URL ?? "https://itzharold.github.io/optical-voice/";
 
-// HTTPS always: the receiver needs getUserMedia, and on insecure origins
-// that API does not exist at all — a phone reaching this server over the LAN
-// gets no camera on plain http (browser rule, localhost-only exemption).
-// The generated cert is self-signed: tap through the warning once on the
-// phone and the page is still a secure context, so the camera works.
-//
+// HTTPS always: camera and microphone access require a secure context on LAN devices.
 // Modes:
-//   (default)           the site — three pages, PWA, offline after first visit
+//   (default)           the site — home, file tools, and live optical talk
 //   demo                sender locked to the bundled payloads
 //   standalone-send     one self-contained decimen-sender.html
 //   standalone-receive  one self-contained decimen-receiver.html
-//
-// The plugins live in build/, one file each.
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")) as {
   version: string;
 };
 
-/**
- * Short commit hash for the footer, "-dirty" appended when the build includes
- * uncommitted work. A standalone file found on a USB stick months later can
- * then say exactly what it was built from. "unknown" outside a git checkout
- * (a source tarball still has to build).
- */
 function buildId(): string {
   const git = (cmd: string) =>
     execSync(cmd, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
@@ -63,13 +47,11 @@ function buildId(): string {
   }
 }
 
-/** Render a <select>'s options from the canonical lists in send-settings.ts. */
 const selectOptions = (values: readonly number[], selected: number) =>
   values
     .map((v) => (v === selected ? `<option selected>${v}</option>` : `<option>${v}</option>`))
     .join("");
 
-// One token set for every mode — the standalone pages carry these tokens too.
 const TOKENS = {
   MAX_FILE_LABEL,
   MAX_SNIPPET_LABEL,
@@ -89,8 +71,6 @@ export default defineConfig(({ mode }) => {
   if (standalone) {
     return {
       base: "./",
-      // The bundled demo PNGs are fetched by relative URL, which a single file
-      // has no way to satisfy — copying them here would just litter the output.
       publicDir: false,
       plugins: [
         htmlTokens(TOKENS),
@@ -102,8 +82,6 @@ export default defineConfig(({ mode }) => {
         licenseBanner(pkg.version),
         emitAs(outDir, `${page}/index.html`, `decimen-${page === "send" ? "sender" : "receiver"}.html`),
       ],
-      // Workers are bundled in their own Rollup pass and do not inherit the
-      // plugin list, so both plugins have to be registered again here.
       worker: { format: "iife", plugins: () => [useInlineVariants(__dirname), inlineZxingWasm()] },
       build: {
         outDir,
@@ -121,21 +99,16 @@ export default defineConfig(({ mode }) => {
       basicSsl(),
       VitePWA({
         registerType: "autoUpdate",
-        // We inject our own registration — see rootPwaHead().
         injectRegister: false,
         manifest: {
-          name: "Decimen Optical Transfer",
-          short_name: "Decimen",
+          name: "Optical Voice",
+          short_name: "Optical Voice",
           description:
-            "Send a file or text between two devices with a screen and a camera. No network.",
+            "Live voice and file transfer using screens and cameras, with no network path between devices.",
           theme_color: "#070a11",
           background_color: "#070a11",
           display: "standalone",
           start_url: "./",
-          // Real icons, not the demo payload image this once pointed at. The
-          // maskable variant keeps the mark inside the launcher's safe zone;
-          // Android needs 192 + 512 with honest sizes to consider the app
-          // installable at all.
           icons: [
             { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
             { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
@@ -143,25 +116,9 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          // Without this a rebuilt site serves stale pages indefinitely.
-          // `registerType: "autoUpdate"` gives the new worker skipWaiting(), so
-          // it activates at once — but activating is not the same as taking
-          // over: an already-open tab stays bound to the OLD worker, which goes
-          // on serving the previous precache. The visible symptom is that a
-          // hard reload shows your changes and an ordinary one undoes them,
-          // because only the hard reload bypasses the service worker.
-          // clientsClaim() makes the new worker adopt open clients immediately.
           clientsClaim: true,
-          // The decoder wasm is 940 KB and is the whole point of caching this
-          // app offline, so it has to be allowed past the default size limit.
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ["**/*.{js,css,html,wasm,png,svg}"],
-          // Received media plays from the Cache API at a real URL: iOS Safari
-          // will not reliably play a blob: URL handed to <video>/<audio>, but
-          // WebKit's media loader is happy with ranged HTTP responses. The
-          // receiver fills this cache (see servableMediaUrl in receive/main.ts)
-          // and workbox's rangeRequests plugin answers AVFoundation's Range
-          // probes from it.
           runtimeCaching: [
             {
               urlPattern: /\/received-media\//,
@@ -184,11 +141,10 @@ export default defineConfig(({ mode }) => {
           index: resolve(__dirname, "index.html"),
           send: resolve(__dirname, "send/index.html"),
           receive: resolve(__dirname, "receive/index.html"),
+          talk: resolve(__dirname, "talk/index.html"),
         },
       },
     },
-    // host: true on both so a phone on the LAN can reach either the dev server
-    // or the built bundle that `npm run serve` previews.
     server: { host: true },
     preview: { host: true },
   };
