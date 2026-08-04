@@ -1,110 +1,89 @@
-# Live optical voice protocol direction
+# OV1 live optical voice protocol
 
-This document records the design constraints for the future live protocol. It is not yet a stable wire-format specification.
+This document describes the first implemented Optical Voice wire format. It is intentionally small and experimental.
 
-## Design goals
+## Layering
 
-The protocol should:
+OV1 does not replace Decimen's existing QR frame protocol or fountain code. It adds one compact media container above them:
 
-- support an unbounded stream as bounded recoverable groups;
-- tolerate dropped, duplicated, and out-of-order optical frames;
-- permit a receiver to join an active stream;
-- keep control metadata self-describing;
-- prioritise current audio over perfect recovery of old audio;
-- support one-way, push-to-talk, and eventually full-duplex sessions;
-- remain testable with deterministic vectors and simulated loss.
-
-## Non-goals for version 1
-
-- bit-perfect archival audio;
-- retransmission handshakes;
-- universal codec support;
-- guaranteed delivery;
-- cryptographic confidentiality unless an explicit encryption layer is enabled.
-
-## Candidate packet fields
-
-A first implementation will likely require fields equivalent to:
-
-```ts
-interface VoicePacketHeader {
-  magic: number;
-  version: number;
-  sessionId: number;
-  speakerId: number;
-  groupId: number;
-  packetSequence: number;
-  groupPacketIndex: number;
-  sourcePacketCount: number;
-  repairPacketCount: number;
-  groupTimestampMs: number;
-  groupDurationMs: number;
-  codecId: number;
-  sampleRate: number;
-  channels: number;
-  payloadLength: number;
-  groupChecksum: number;
-  flags: number;
-}
+```text
+OV1 voice group
+  → LT fountain encoder
+  → existing 20-byte Decimen frame header
+  → QR byte payload
 ```
 
-The exact representation and field sizes must be chosen only after capacity and compatibility measurements.
+Every voice group is finite and independently decodable. This allows a receiver to recover and play current speech without knowing the final duration of a conversation.
 
-## Transmission groups
+## Voice-group layout
 
-A transmission group is a short independent unit of encoded speech. It should contain enough codec frames to use optical capacity efficiently, while remaining short enough to recover before playback.
+All integers are little-endian.
 
-Each group should have:
+| Offset | Type | Meaning |
+| ---: | --- | --- |
+| 0 | 4 bytes | Magic `4f 56 31 00` (`OV1\0`) |
+| 4 | `u16` | Random sender/stream ID |
+| 6 | `u32` | Monotonically increasing group ID |
+| 10 | `u16` | UTF-8 MIME-type length |
+| 12 | `u32` | Encoded-audio byte length |
+| 16 | bytes | UTF-8 MIME type |
+| variable | bytes | Complete independently playable encoded-audio blob |
 
-- a unique session-relative group ID;
-- a capture timestamp and duration;
-- codec configuration sufficient for decoding;
-- a checksum or cryptographic digest;
-- source and repair packet information;
-- an explicit deadline derived by the receiver.
+The fixed header is 16 bytes. A voice group is rejected when its lengths do not exactly match the recovered payload or when its encoded audio exceeds 128 KiB.
 
-## Session changes
+## Audio grouping
 
-A new session ID should reset receiver state. Session changes may occur when:
+The browser prototype records approximately 600 ms per group at a requested 16 kbit/s audio bitrate. `MediaRecorder` is restarted for every group so each blob carries enough container information to be decoded independently.
 
-- the sender restarts;
-- codec parameters change;
-- the selected optical profile changes incompatibly;
-- a user starts a new conversation.
+The sender prefers these formats in order, using the first one supported by its browser:
 
-Codec or profile changes inside an active session should be avoided in the first version.
+1. `audio/webm;codecs=opus`
+2. `audio/mp4;codecs=mp4a.40.2`
+3. `audio/webm`
+4. `audio/mp4`
 
-## Control packets
+Cross-browser communication therefore requires the receiving browser's audio decoder to understand the sender's selected format.
 
-Control information may include:
+## Optical transmission
 
-- session announcement;
-- speaker start/stop state;
-- codec configuration;
-- end-of-turn marker;
-- capability/profile information;
-- optional encryption metadata.
+Each OV1 group is passed to the inherited `LTEncoder` with a 980-byte source block (`1000` QR frame bytes minus the existing 20-byte frame header).
 
-Control information should receive stronger protection or repetition than ordinary audio payloads.
+The prototype sends a bounded amount of fountain redundancy:
 
-## Receiver deadlines
+```text
+max(8, ceil(sourceBlockCount × 2.2) + 3) frames
+```
 
-The receiver should calculate a playback deadline for every group. A group that cannot be recovered and decoded before that deadline should be marked late and discarded. This is a core semantic difference from the inherited file protocol.
+A fresh random 16-bit Decimen session ID is used for every group. The existing frame checksum covers the entire OV1 group.
 
-Metrics should distinguish:
+The sender emits at 20 QR frames per second and retains at most three waiting voice groups. When recording outruns optical transmission, the oldest waiting group is discarded. This is deliberate: live conversation prioritises current speech over perfect delivery of old speech.
 
-- optical packet loss;
-- unrecovered groups;
-- recovered but late groups;
-- decoder errors;
-- playback underruns.
+## Receiver behaviour
+
+The receiver may see frames from adjacent groups out of order because camera-worker results can complete across a QR transition. It therefore keeps up to four fountain decoders keyed by the existing Decimen stream identity.
+
+After a group is complete, the receiver:
+
+1. assembles the fountain payload;
+2. verifies the inherited FNV checksum;
+3. validates and unpacks the OV1 header;
+4. ignores reflected packets carrying its own stream ID;
+5. rejects duplicate or older group IDs;
+6. decodes the audio blob;
+7. schedules it into a small playback buffer.
+
+A playback queue that grows beyond roughly 2.5 seconds is reset to the current time plus a short lead. Old queued speech is not allowed to turn the system into a delayed recording.
+
+## Session semantics
+
+There is no handshake, acknowledgement, retransmission request, or central session service. Pressing Start creates a new random sender ID and resets local receiver state.
+
+Both devices run the same transmit and receive pipeline simultaneously. The physical arrangement of the devices is the session: each front camera must maintain line of sight to the other screen.
 
 ## Versioning
 
-The live protocol must use its own magic value and version namespace so live packets cannot be mistaken for inherited Decimen file-transfer packets.
+`OV1` is an experimental version identifier, not a promise of long-term wire compatibility. Breaking changes require a new magic/version and updated tests.
 
-Breaking wire-format changes require a version increase and updated golden test vectors.
+## Security
 
-## Security note
-
-A camera with line of sight can observe the optical stream. “No network” does not mean confidential. Encryption should be implemented as an optional authenticated-encryption layer over encoded audio groups, with keys established outside or through a separately reviewed optical handshake.
+OV1 is not encrypted. A camera with line of sight may recover the voice stream. “No network path” is a transport property, not confidentiality.
