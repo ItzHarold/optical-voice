@@ -1,64 +1,59 @@
 # Optical Voice roadmap
 
-This roadmap separates code-complete milestones from physical validation. The first full-duplex browser prototype now exists; the next work is measurement, compatibility, and resilience.
+Optical Voice v0.1 proves that live microphone audio can be carried through animated optical codes and reconstructed while the sender is still speaking. The next work is no longer basic feasibility; it is alignment, measurement, compatibility, and resilience.
 
-## Phase 0 — Project foundation
+## Completed — v0.1 proof of concept
 
-- [x] Preserve the upstream fork relationship and Git history.
-- [x] Establish Optical Voice branding, ownership, attribution, and contribution rules.
-- [x] Document the live-media architecture.
-- [x] Keep the inherited file-transfer modes available.
-- [ ] Add repeatable optical-channel benchmarks for latency, loss, and goodput.
-
-## Phase 1 — Compact live transport
-
-- [x] Capture microphone audio using `MediaRecorder`.
+- [x] Preserve the upstream fork relationship, Git history, attribution, and MIT licence.
+- [x] Keep Decimen's inherited file and text transfer modes available.
+- [x] Capture low-bitrate microphone audio with `MediaRecorder`.
 - [x] Split speech into short independently playable groups.
-- [x] Define the `OV1` live voice group header.
-- [x] Reuse the existing fountain-coded QR frame transport.
-- [x] Decode several transition-overlapping optical streams safely.
+- [x] Define and test the compact `OV1` live voice container.
+- [x] Reuse the inherited fountain-coded QR transport.
+- [x] Decode overlapping group transitions without resetting useful progress.
 - [x] Verify recovered groups before playback.
-- [x] Add wire-format tests.
-
-## Phase 2 — One-way and two-way live audio
-
-- [x] Encode and display groups while the microphone remains active.
-- [x] Decode groups incrementally instead of waiting for one complete recording.
-- [x] Add scheduled playback with a small jitter buffer.
+- [x] Schedule playback with a small bounded buffer.
 - [x] Discard stale queued speech instead of allowing unbounded delay.
-- [x] Combine front-camera receive and screen transmit into one page.
-- [x] Run transmit and receive continuously on both devices.
-- [x] Request browser echo cancellation, noise suppression, and automatic gain control.
-- [ ] Confirm intelligible one-way audio on documented phone/browser pairs.
-- [ ] Confirm reproducible simultaneous two-way speech on at least one device pair.
-- [ ] Measure glass-to-glass latency and optical group loss.
+- [x] Combine transmit and receive into one `/talk/` page.
+- [x] Keep the camera preview physically separate from the transmitted QR.
+- [x] Add camera alignment guidance and live **Searching / Reading** feedback.
+- [x] Demonstrate live optical audio from a phone to a laptop.
 
-Initial prototype targets:
+## Next — physical usability
 
-- mono low-bitrate speech;
-- 600 ms independently recoverable groups;
-- bounded sender queue;
-- approximately one to two seconds of practical latency;
-- graceful loss through skipped groups rather than a frozen stream.
+- [ ] Make simultaneous two-camera alignment easier and reproducible.
+- [ ] Document successful device, browser, distance, brightness, and orientation combinations.
+- [ ] Confirm sustained simultaneous two-way speech on at least one documented device pair.
+- [ ] Add a push-to-talk fallback for arrangements that cannot maintain full duplex.
+- [ ] Add clearer feedback for the remote direction, not only the local camera lock.
 
-## Phase 3 — Resilience and usability
+## Next — measurement and adaptation
 
-- [ ] Tune bitrate, QR density, frame rate, group size, and redundancy from measured decode performance.
-- [ ] Add visual alignment and distance guidance.
-- [ ] Adapt to camera decode rate and thermal throttling.
-- [ ] Add a push-to-talk fallback for devices that cannot sustain full duplex.
-- [ ] Add clearer audio-format compatibility reporting.
-- [ ] Build a device/browser compatibility matrix.
-- [ ] Add optional end-to-end encryption above the optical transport.
+- [ ] Measure glass-to-glass latency, decoded QR rate, group recovery rate, and dropped speech.
+- [ ] Tune bitrate, QR density, frame rate, group duration, and redundancy from measurements.
+- [ ] Adapt transmission settings to observed camera decode performance.
+- [ ] Measure CPU, battery use, device temperature, autofocus, exposure, and long-session stability.
+- [ ] Build a public device and browser compatibility matrix.
 
-## Phase 4 — Quality
+## Later — quality and security
 
-- [ ] Replace recorder restart boundaries with a lower-level streaming codec where browser support permits.
-- [ ] Improve concealment when groups are missed.
-- [ ] Measure CPU, battery, heat, exposure, and long-session stability.
-- [ ] Add accessibility support and automated browser tests.
-- [ ] Publish reproducible demonstrations and benchmark results.
+- [ ] Replace recorder restart boundaries with a lower-level streaming codec where practical.
+- [ ] Improve concealment when speech groups are missed.
+- [ ] Add automated browser and protocol compatibility tests.
+- [ ] Improve accessibility and connection guidance.
+- [ ] Add optional authenticated encryption above the optical transport.
+- [ ] Publish reproducible demonstrations and benchmarks.
 
-## Not currently promised
+## Current prototype parameters
 
-The project does not promise conventional phone-call latency, universal browser support, long-distance communication, operation without line of sight, or better performance than Wi-Fi/Bluetooth. Those claims require physical evidence.
+- approximately 600 ms per independently recoverable audio group;
+- requested 12 kbit/s encoded audio;
+- 640 bytes per QR frame, including the inherited 20-byte frame header;
+- 15 transmitted QR frames per second;
+- bounded fountain redundancy per group;
+- maximum of three waiting transmit groups;
+- small scheduled playback lead with excessive queued delay discarded.
+
+## Not promised
+
+The project does not promise conventional phone-call latency, universal browser support, long-distance communication, operation without line of sight, confidentiality, or better performance than radio-based communication. Those claims require evidence beyond the v0.1 proof of concept.
