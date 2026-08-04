@@ -58,15 +58,16 @@
       .camera-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 2px solid var(--line); border-radius: 14px; background: #111; transition: border-color .2s, box-shadow .2s; }
       .camera-card.locked .camera-frame { border-color: #65d89b; box-shadow: 0 0 0 3px rgba(101,216,155,.13); }
       .camera-card.locked #scan-stat { color: #86e9b3; }
-      #camera {
-        position: static !important;
-        inset: auto !important;
-        z-index: auto !important;
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: cover;
-        transform: scaleX(-1);
+      #camera-preview { width: 100%; height: 100%; display: block; background: #111; }
+      #camera-source {
+        position: fixed !important;
+        left: -10000px !important;
+        top: 0 !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        clip-path: inset(100%) !important;
       }
       .scan-guide { position: absolute; left: 50%; top: 50%; width: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,.88); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.16); pointer-events: none; }
       .scan-guide::after { content: "CENTER OTHER QR"; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); white-space: nowrap; padding: 3px 6px; border-radius: 6px; background: rgba(7,10,17,.72); color: #fff; font-size: .58rem; font-weight: 750; letter-spacing: .08em; }
@@ -131,7 +132,7 @@
               <strong id="scan-stat">Idle</strong>
             </div>
             <div class="camera-frame">
-              <video id="camera" muted playsinline aria-label="Front camera preview"></video>
+              <canvas id="camera-preview" width="480" height="360" aria-label="Front camera preview"></canvas>
               <div class="scan-guide" aria-hidden="true"></div>
             </div>
             <p class="camera-hint">Move the other device until its entire QR nearly fills the guide square.</p>
@@ -153,13 +154,15 @@
           </div>
 
           <ul class="talk-notes">
-            <li>The camera preview is physically separate from the transmitted QR.</li>
+            <li>The actual camera video is hidden; only this canvas preview is displayed.</li>
             <li>Center the opposite QR inside the receiver guide until it says Reading.</li>
             <li>Headphones strongly reduce echo and feedback.</li>
           </ul>
         </aside>
       </div>
     </main>
+
+    <video id="camera-source" muted playsinline disablepictureinpicture aria-hidden="true"></video>
 
     <footer class="site-footer">
       <span class="footer-id">
