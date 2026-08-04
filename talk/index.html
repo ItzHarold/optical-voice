@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Optical Voice — live conversation through light</title>
+    <meta
+      name="description"
+      content="Two-way live voice communication between nearby devices using only screens, front cameras, microphones, and speakers."
+    />
+    <meta name="theme-color" content="#070a11" />
+    <link rel="icon" href="../decimen_logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      .talk-page { min-height: 100svh; background: #070a11; }
+      .talk-shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
+      .talk-intro { display: grid; gap: 10px; margin-bottom: 24px; }
+      .talk-intro h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.6rem); line-height: .95; }
+      .talk-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.02rem; }
+      .talk-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(270px, .6fr); gap: 18px; align-items: start; }
+      .optical-stage, .talk-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+      .optical-stage { position: relative; min-height: 420px; padding: 18px; display: grid; place-items: center; overflow: hidden; }
+      #qr { display: block; max-width: 100%; max-height: 68svh; background: white; border-radius: 12px; }
+      #camera { position: absolute; right: 28px; bottom: 28px; width: min(30%, 180px); aspect-ratio: 4 / 3; object-fit: cover; border: 2px solid rgba(255,255,255,.75); border-radius: 14px; background: #111; transform: scaleX(-1); box-shadow: 0 12px 35px rgba(0,0,0,.45); }
+      .talk-panel { padding: 22px; display: grid; gap: 18px; }
+      .talk-panel h2 { margin: 0; font-size: 1.15rem; }
+      .talk-actions { display: grid; gap: 10px; }
+      .talk-button { border: 0; border-radius: 12px; padding: 14px 16px; font: inherit; font-weight: 750; cursor: pointer; }
+      .talk-button.primary { background: #fff; color: #070a11; }
+      .talk-button.secondary { background: transparent; color: inherit; border: 1px solid var(--line); }
+      .talk-status { min-height: 48px; margin: 0; color: var(--muted); line-height: 1.45; }
+      .talk-status.error { color: #ff9d9d; }
+      .talk-stats { display: grid; grid-template-columns: 1fr; gap: 8px; }
+      .talk-stat { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--muted); }
+      .talk-stat strong { color: var(--text); font-weight: 650; text-align: right; }
+      .talk-notes { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 8px; }
+      .experimental { display: inline-flex; width: fit-content; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+      @media (max-width: 780px) {
+        .talk-grid { grid-template-columns: 1fr; }
+        .optical-stage { min-height: 360px; padding: 12px; }
+        #camera { right: 20px; bottom: 20px; }
+      }
+    </style>
+  </head>
+  <body class="talk-page">
+    <header class="site-header">
+      <a class="brand" href="../">Optical Voice</a>
+      <nav class="mode-nav" aria-label="Mode">
+        <a href="../send/">Files</a>
+        <a href="./" aria-current="page">Talk</a>
+      </nav>
+    </header>
+
+    <main class="talk-shell">
+      <section class="talk-intro">
+        <span class="experimental">Experimental full duplex</span>
+        <h1>Talk through light.</h1>
+        <p>
+          Open this page on two devices, press start on both, and face their screens toward
+          each other. Each screen transmits live compressed speech while its front camera
+          receives the other device's optical stream.
+        </p>
+      </section>
+
+      <div class="talk-grid">
+        <section class="optical-stage" aria-label="Live optical transmitter and camera preview">
+          <canvas id="qr" width="360" height="360"></canvas>
+          <video id="camera" muted playsinline aria-label="Front camera preview"></video>
+        </section>
+
+        <aside class="talk-panel">
+          <h2>Conversation</h2>
+          <p id="status" class="talk-status">Press start on both devices when they are facing each other.</p>
+          <div class="talk-actions">
+            <button id="start" class="talk-button primary" type="button">Start conversation</button>
+            <button id="mute" class="talk-button secondary" type="button" hidden>Mute microphone</button>
+          </div>
+
+          <div class="talk-stats" aria-label="Live statistics">
+            <div class="talk-stat"><span>Transmit</span><strong id="tx-stat">0 sent</strong></div>
+            <div class="talk-stat"><span>Receive</span><strong id="rx-stat">0 received</strong></div>
+            <div class="talk-stat"><span>Playback</span><strong id="buffer-stat">0.0 s buffer</strong></div>
+          </div>
+
+          <ul class="talk-notes">
+            <li>Headphones strongly reduce echo and feedback.</li>
+            <li>Keep both front cameras aimed at the opposite QR code.</li>
+            <li>Speech is sent in short recoverable groups; late groups are skipped to stay live.</li>
+          </ul>
+        </aside>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <span class="footer-id">
+        <span>Optical Voice</span>
+        <span>Led by Harold Ponte da Costa · built on Decimen · MIT</span>
+      </span>
+      <nav class="footer-links" aria-label="Project links">
+        <a href="https://github.com/ItzHarold/optical-voice">GitHub</a>
+      </nav>
+    </footer>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
