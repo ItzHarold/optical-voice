@@ -13,24 +13,61 @@
     <link rel="stylesheet" href="../shared/style.css" />
     <style>
       .talk-page { min-height: 100svh; background: #070a11; }
-      .talk-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
+      .talk-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
       .talk-intro { display: grid; gap: 10px; margin-bottom: 24px; }
       .talk-intro h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.6rem); line-height: .95; }
       .talk-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.02rem; }
-      .talk-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(270px, .45fr); gap: 18px; align-items: start; }
-      .optical-stage, .talk-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
-      .optical-stage { min-height: 420px; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .42fr); gap: 18px; align-items: center; overflow: hidden; }
-      .qr-wrap { min-width: 0; display: grid; place-items: center; gap: 10px; }
+      .talk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 320px); gap: 18px; align-items: start; }
+      .media-grid { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(220px, .55fr); gap: 18px; align-items: start; }
+      .optical-stage, .camera-card, .talk-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+      .optical-stage {
+        min-width: 0;
+        min-height: 420px;
+        padding: 18px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        isolation: isolate;
+        contain: layout paint;
+      }
+      .qr-wrap { min-width: 0; width: 100%; display: grid; place-items: center; gap: 10px; }
       .stage-label { margin: 0; color: var(--muted); font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-      #qr { display: block; max-width: 100%; max-height: 72svh; background: white; border-radius: 12px; }
-      .camera-card { width: 100%; display: grid; gap: 10px; align-self: stretch; align-content: center; }
+      #qr {
+        position: relative;
+        z-index: 1;
+        display: block;
+        max-width: 100%;
+        max-height: 72svh;
+        background: white;
+        border-radius: 12px;
+      }
+      .camera-card {
+        min-width: 0;
+        width: 100%;
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        overflow: hidden;
+        isolation: isolate;
+        contain: layout paint;
+      }
       .camera-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
       .camera-heading span { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
       #scan-stat { color: var(--muted); font-size: .78rem; font-weight: 650; }
-      .camera-frame { position: relative; aspect-ratio: 4 / 3; overflow: hidden; border: 2px solid var(--line); border-radius: 14px; background: #111; transition: border-color .2s, box-shadow .2s; }
+      .camera-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 2px solid var(--line); border-radius: 14px; background: #111; transition: border-color .2s, box-shadow .2s; }
       .camera-card.locked .camera-frame { border-color: #65d89b; box-shadow: 0 0 0 3px rgba(101,216,155,.13); }
       .camera-card.locked #scan-stat { color: #86e9b3; }
-      #camera { width: 100%; height: 100%; display: block; object-fit: cover; transform: scaleX(-1); }
+      #camera {
+        position: static !important;
+        inset: auto !important;
+        z-index: auto !important;
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+        transform: scaleX(-1);
+      }
       .scan-guide { position: absolute; left: 50%; top: 50%; width: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,.88); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.16); pointer-events: none; }
       .scan-guide::after { content: "CENTER OTHER QR"; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); white-space: nowrap; padding: 3px 6px; border-radius: 6px; background: rgba(7,10,17,.72); color: #fff; font-size: .58rem; font-weight: 750; letter-spacing: .08em; }
       .camera-hint { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.4; }
@@ -47,14 +84,15 @@
       .talk-stat strong { color: var(--text); font-weight: 650; text-align: right; }
       .talk-notes { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 8px; }
       .experimental { display: inline-flex; width: fit-content; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
-      @media (max-width: 960px) {
-        .optical-stage { grid-template-columns: 1fr; }
-        .camera-card { width: min(460px, 100%); justify-self: center; }
-      }
-      @media (max-width: 780px) {
+      @media (max-width: 980px) {
         .talk-grid { grid-template-columns: 1fr; }
-        .optical-stage { min-height: 360px; padding: 12px; }
-        .talk-shell { width: min(100% - 20px, 1180px); padding-top: 20px; }
+        .talk-panel { order: 2; }
+      }
+      @media (max-width: 760px) {
+        .media-grid { grid-template-columns: 1fr; }
+        .optical-stage { min-height: 340px; padding: 12px; }
+        .camera-card { width: 100%; }
+        .talk-shell { width: min(100% - 20px, 1240px); padding-top: 20px; }
       }
     </style>
   </head>
@@ -79,13 +117,15 @@
       </section>
 
       <div class="talk-grid">
-        <section class="optical-stage" aria-label="Live optical transmitter and camera preview">
-          <div class="qr-wrap">
-            <p class="stage-label">This screen transmits</p>
-            <canvas id="qr" width="360" height="360"></canvas>
-          </div>
+        <div class="media-grid">
+          <section class="optical-stage" aria-label="Live optical transmitter">
+            <div class="qr-wrap">
+              <p class="stage-label">This screen transmits</p>
+              <canvas id="qr" width="360" height="360"></canvas>
+            </div>
+          </section>
 
-          <div id="camera-card" class="camera-card">
+          <section id="camera-card" class="camera-card" aria-label="Front camera receiver preview">
             <div class="camera-heading">
               <span>This camera receives</span>
               <strong id="scan-stat">Idle</strong>
@@ -95,8 +135,8 @@
               <div class="scan-guide" aria-hidden="true"></div>
             </div>
             <p class="camera-hint">Move the other device until its entire QR nearly fills the guide square.</p>
-          </div>
-        </section>
+          </section>
+        </div>
 
         <aside class="talk-panel">
           <h2>Conversation</h2>
@@ -113,9 +153,9 @@
           </div>
 
           <ul class="talk-notes">
-            <li>Headphones strongly reduce echo and feedback.</li>
+            <li>The camera preview is physically separate from the transmitted QR.</li>
             <li>Center the opposite QR inside the receiver guide until it says Reading.</li>
-            <li>Speech is sent in short recoverable groups; late groups are skipped to stay live.</li>
+            <li>Headphones strongly reduce echo and feedback.</li>
           </ul>
         </aside>
       </div>
