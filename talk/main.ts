@@ -29,6 +29,7 @@ const status = document.getElementById("status")!;
 const txStat = document.getElementById("tx-stat")!;
 const rxStat = document.getElementById("rx-stat")!;
 const bufferStat = document.getElementById("buffer-stat")!;
+const staging = document.createElement("canvas");
 
 interface TxGroup {
   encoder: LTEncoder;
@@ -148,7 +149,11 @@ async function recordLoop(gen: number): Promise<void> {
   const mime = recorderMime();
   while (running && gen === generation) {
     const blob = await recordGroup(audioStream, mime, gen);
-    if (!blob || !running || gen !== generation) continue;
+    if (!blob) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      continue;
+    }
+    if (!running || gen !== generation) continue;
     const bytes = new Uint8Array(await blob.arrayBuffer());
     try {
       enqueueVoice(packVoiceChunk(senderId, groupId++, blob.type || mime || "audio/webm", bytes));
@@ -199,7 +204,6 @@ function nextQrFrame(): ImageData | null {
 }
 
 function drawQr(image: ImageData): void {
-  const staging = document.createElement("canvas");
   staging.width = image.width;
   staging.height = image.height;
   staging.getContext("2d")!.putImageData(image, 0, 0);
@@ -280,6 +284,7 @@ async function scheduleAudio(streamId: number, remoteGroupId: number, audio: Uin
   try {
     const stable = audio.slice().buffer;
     const decoded = await ctx.decodeAudioData(stable);
+    if (lastRemoteGroup.get(streamId) !== remoteGroupId) return;
     const now = ctx.currentTime;
     if (nextPlayAt < now || nextPlayAt - now > 2.5) nextPlayAt = now + PLAYBACK_LEAD;
     const source = ctx.createBufferSource();
@@ -337,6 +342,7 @@ async function start(): Promise<void> {
     return;
   }
   const gen = ++generation;
+  startButton.disabled = true;
   setStatus("Requesting camera and microphone…");
   try {
     media = await navigator.mediaDevices.getUserMedia({
@@ -375,6 +381,7 @@ async function start(): Promise<void> {
     completedStreams.clear();
     lastRemoteGroup.clear();
     running = true;
+    startButton.disabled = false;
     startButton.textContent = "Stop conversation";
     muteButton.hidden = false;
     muteButton.textContent = "Mute microphone";
@@ -403,6 +410,7 @@ function stop(): void {
   txQueue = [];
   currentTx = null;
   rxStreams.clear();
+  startButton.disabled = false;
   startButton.textContent = "Start conversation";
   muteButton.hidden = true;
   drawIdle();
