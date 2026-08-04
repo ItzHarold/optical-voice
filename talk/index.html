@@ -13,15 +13,27 @@
     <link rel="stylesheet" href="../shared/style.css" />
     <style>
       .talk-page { min-height: 100svh; background: #070a11; }
-      .talk-shell { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
+      .talk-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
       .talk-intro { display: grid; gap: 10px; margin-bottom: 24px; }
       .talk-intro h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.6rem); line-height: .95; }
       .talk-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.02rem; }
-      .talk-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(270px, .6fr); gap: 18px; align-items: start; }
+      .talk-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(270px, .45fr); gap: 18px; align-items: start; }
       .optical-stage, .talk-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
-      .optical-stage { position: relative; min-height: 420px; padding: 18px; display: grid; place-items: center; overflow: hidden; }
-      #qr { display: block; max-width: 100%; max-height: 68svh; background: white; border-radius: 12px; }
-      #camera { position: absolute; right: 28px; bottom: 28px; width: min(30%, 180px); aspect-ratio: 4 / 3; object-fit: cover; border: 2px solid rgba(255,255,255,.75); border-radius: 14px; background: #111; transform: scaleX(-1); box-shadow: 0 12px 35px rgba(0,0,0,.45); }
+      .optical-stage { min-height: 420px; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .42fr); gap: 18px; align-items: center; overflow: hidden; }
+      .qr-wrap { min-width: 0; display: grid; place-items: center; gap: 10px; }
+      .stage-label { margin: 0; color: var(--muted); font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+      #qr { display: block; max-width: 100%; max-height: 72svh; background: white; border-radius: 12px; }
+      .camera-card { width: 100%; display: grid; gap: 10px; align-self: stretch; align-content: center; }
+      .camera-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .camera-heading span { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      #scan-stat { color: var(--muted); font-size: .78rem; font-weight: 650; }
+      .camera-frame { position: relative; aspect-ratio: 4 / 3; overflow: hidden; border: 2px solid var(--line); border-radius: 14px; background: #111; transition: border-color .2s, box-shadow .2s; }
+      .camera-card.locked .camera-frame { border-color: #65d89b; box-shadow: 0 0 0 3px rgba(101,216,155,.13); }
+      .camera-card.locked #scan-stat { color: #86e9b3; }
+      #camera { width: 100%; height: 100%; display: block; object-fit: cover; transform: scaleX(-1); }
+      .scan-guide { position: absolute; left: 50%; top: 50%; width: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,.88); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.16); pointer-events: none; }
+      .scan-guide::after { content: "CENTER OTHER QR"; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); white-space: nowrap; padding: 3px 6px; border-radius: 6px; background: rgba(7,10,17,.72); color: #fff; font-size: .58rem; font-weight: 750; letter-spacing: .08em; }
+      .camera-hint { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.4; }
       .talk-panel { padding: 22px; display: grid; gap: 18px; }
       .talk-panel h2 { margin: 0; font-size: 1.15rem; }
       .talk-actions { display: grid; gap: 10px; }
@@ -35,10 +47,14 @@
       .talk-stat strong { color: var(--text); font-weight: 650; text-align: right; }
       .talk-notes { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 8px; }
       .experimental { display: inline-flex; width: fit-content; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+      @media (max-width: 960px) {
+        .optical-stage { grid-template-columns: 1fr; }
+        .camera-card { width: min(460px, 100%); justify-self: center; }
+      }
       @media (max-width: 780px) {
         .talk-grid { grid-template-columns: 1fr; }
         .optical-stage { min-height: 360px; padding: 12px; }
-        #camera { right: 20px; bottom: 20px; }
+        .talk-shell { width: min(100% - 20px, 1180px); padding-top: 20px; }
       }
     </style>
   </head>
@@ -64,8 +80,22 @@
 
       <div class="talk-grid">
         <section class="optical-stage" aria-label="Live optical transmitter and camera preview">
-          <canvas id="qr" width="360" height="360"></canvas>
-          <video id="camera" muted playsinline aria-label="Front camera preview"></video>
+          <div class="qr-wrap">
+            <p class="stage-label">This screen transmits</p>
+            <canvas id="qr" width="360" height="360"></canvas>
+          </div>
+
+          <div id="camera-card" class="camera-card">
+            <div class="camera-heading">
+              <span>This camera receives</span>
+              <strong id="scan-stat">Idle</strong>
+            </div>
+            <div class="camera-frame">
+              <video id="camera" muted playsinline aria-label="Front camera preview"></video>
+              <div class="scan-guide" aria-hidden="true"></div>
+            </div>
+            <p class="camera-hint">Move the other device until its entire QR nearly fills the guide square.</p>
+          </div>
         </section>
 
         <aside class="talk-panel">
@@ -84,7 +114,7 @@
 
           <ul class="talk-notes">
             <li>Headphones strongly reduce echo and feedback.</li>
-            <li>Keep both front cameras aimed at the opposite QR code.</li>
+            <li>Center the opposite QR inside the receiver guide until it says Reading.</li>
             <li>Speech is sent in short recoverable groups; late groups are skipped to stay live.</li>
           </ul>
         </aside>
