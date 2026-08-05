@@ -2,6 +2,9 @@
 
 **Live speech transmitted through animated QR codes — screen to camera, with no network carrying the audio.**
 
+**Live application:** [opticalvoice.haroldpdc.com](https://opticalvoice.haroldpdc.com)  
+**Start a conversation:** [opticalvoice.haroldpdc.com/talk/](https://opticalvoice.haroldpdc.com/talk/)
+
 Optical Voice is an open-source proof of concept led by **Harold Ponte da Costa**. It turns a device's microphone audio into a continuous sequence of short, recoverable optical transmissions. Another device reads those animated codes with its camera, reconstructs the audio, and plays it while the conversation is still happening.
 
 The same `/talk/` page can transmit and receive at the same time, making experimental two-way optical voice possible when both devices maintain a clear camera-to-screen view.
@@ -48,24 +51,30 @@ Device A screen  → Device B camera
 Device A camera  ← Device B screen
 ```
 
-## Run it
+## Try the hosted application
+
+Open the live application on both devices:
+
+- [Optical Voice home](https://opticalvoice.haroldpdc.com)
+- [Live optical conversation](https://opticalvoice.haroldpdc.com/talk/)
+
+Then:
+
+1. Allow camera and microphone access.
+2. Press **Start conversation** on both devices.
+3. Aim each front camera at the other device's QR code.
+4. Wait until the receiver indicator says **Reading**.
+
+The hosted application is served over HTTPS, so no local development certificate is required. Headphones are strongly recommended to reduce acoustic echo and feedback.
+
+## Run locally
 
 ```bash
 npm install
 npm run dev
 ```
 
-Vite prints a local HTTPS address and a network address. Then:
-
-1. Open the network address on both devices.
-2. Navigate to `/talk/` on both.
-3. Accept the development certificate warning when prompted.
-4. Allow camera and microphone access.
-5. Press **Start conversation** on both devices.
-6. Aim each front camera at the other device's QR code.
-7. Wait until the receiver indicator says **Reading**.
-
-Headphones are strongly recommended to reduce acoustic echo and feedback.
+Vite prints a local HTTPS address and a network address. Open the network address on both devices, navigate to `/talk/`, accept the development certificate warning, and allow camera and microphone access.
 
 ## Why the implementation is small
 
