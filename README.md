@@ -1,88 +1,96 @@
 # Optical Voice
 
-**Live voice communication carried entirely through animated visual codes.**
+**Live speech transmitted through animated QR codes — screen to camera, with no network carrying the audio.**
 
-Optical Voice is an open-source experiment led by **Harold Ponte da Costa** to make real-time speech possible between nearby devices using only their screens, cameras, microphones, and speakers—without Wi-Fi, Bluetooth, cellular service, pairing, or an intermediary server.
+Optical Voice is an open-source proof of concept led by **Harold Ponte da Costa**. It turns a device's microphone audio into a continuous sequence of short, recoverable optical transmissions. Another device reads those animated codes with its camera, reconstructs the audio, and plays it while the conversation is still happening.
 
-Each device will display an encoded optical stream while its camera reads the other device's stream. The long-term goal is a two-way conversation that travels directly from screen to camera.
+The same `/talk/` page can transmit and receive at the same time, making experimental two-way optical voice possible when both devices maintain a clear camera-to-screen view.
 
-> [!IMPORTANT]
-> Live voice is the project goal, not the current state. The inherited Decimen code currently transfers complete files and text through animated QR codes. Development will progress from recorded voice messages to one-way live speech, push-to-talk, and finally experimental full-duplex audio.
+> **v0.1 proof of concept:** live optical audio has been successfully demonstrated between a phone and a laptop. Maintaining simultaneous optical lock in both directions is possible but physically difficult because both front cameras must continuously see the opposite screen.
 
-## Project status
+## What it does
 
 | Capability | Status |
 | --- | --- |
-| Fountain-coded optical file transfer | Available from upstream |
-| Recorded voice-message transfer | Planned baseline |
-| One-way live microphone audio | Planned |
-| Optical push-to-talk | Planned |
-| Simultaneous two-way conversation | Research milestone |
+| Live microphone capture | Working |
+| Speech encoded into short independent groups | Working |
+| Animated QR transmission | Working |
+| Camera-based incremental recovery | Working |
+| Verified audio reconstruction and playback | Working |
+| Bounded buffering that skips stale speech | Working |
+| Transmit and receive from the same page | Working |
+| Phone-to-laptop live optical audio | Demonstrated |
+| Consistent simultaneous two-way alignment | Experimental |
+| Broad device and browser compatibility | Not yet established |
 
-See the [roadmap](ROADMAP.md) for the staged delivery plan.
+The audio itself does not travel through Wi-Fi, Bluetooth, cellular service, WebRTC, or a server. A network connection is only needed to load the web application unless it has already been installed or cached as a PWA.
 
-## How it should work
+## How it works
 
 ```text
 microphone
-  → speech compression
-  → short, independently recoverable audio groups
-  → fountain/error-corrected optical packets
-  → animated visual stream
-  → camera decoding on the other device
-  → jitter buffer
-  → audio playback
+  → 600 ms low-bitrate audio group
+  → OV1 voice container
+  → Luby Transform fountain coding
+  → animated QR frames on the screen
+  → camera on the other device
+  → QR decoding and fountain recovery
+  → integrity and sequence validation
+  → scheduled audio playback
 ```
 
-A live stream cannot be treated as one endlessly growing file. Audio must be divided into short groups with sequence numbers and playback deadlines. Missing data should be recovered when possible and skipped when it arrives too late, rather than blocking the conversation.
+Each audio group is independently recoverable. The sender emits repair frames for a limited time and then advances. When optical transmission cannot keep up, old speech is discarded rather than allowing latency to grow indefinitely.
 
-The first practical target is **headphone-based optical push-to-talk**. This avoids acoustic echo while proving the core live transport.
+Both devices can run this pipeline simultaneously:
 
-## Why this project exists
+```text
+Device A screen  → Device B camera
+Device A camera  ← Device B screen
+```
 
-Current device-to-device communication normally depends on a radio link or network service. Optical Voice explores a different local channel:
-
-- direct line-of-sight communication;
-- no network path between participants;
-- no account, pairing, or discovery service;
-- a channel that is physically visible and intentionally directional;
-- an open protocol that can be studied, measured, and improved.
-
-This is an experimental communication system, not a claim that optical QR communication is faster or more convenient than conventional networking.
-
-## Technical foundation
-
-The project is forked from [Decimen Optical Transfer](https://github.com/bashalarmistalt/decimen-optical-transfer), created by Evan Crawley (Bash Alarmist).
-
-Decimen provides the existing foundation for:
-
-- animated QR generation;
-- camera capture and WASM QR decoding;
-- Luby Transform fountain coding;
-- dropped-frame tolerance;
-- deterministic wire-format handling;
-- browser/PWA support across desktop and mobile devices.
-
-Optical Voice will introduce a separate live-media protocol, streaming audio pipeline, jitter buffering, playback scheduling, session control, and bidirectional communication mode.
-
-## Development principles
-
-1. **Measure before optimizing.** Latency, decode rate, loss, CPU load, and thermal behaviour must be observable.
-2. **Build in stages.** Recorded audio first, then one-way live audio, then push-to-talk, then full duplex.
-3. **Keep the protocol documented.** Every wire-format change must be reflected in the protocol specification and test vectors.
-4. **Fail gracefully.** Late or missing audio should reduce quality rather than freeze the stream.
-5. **Preserve attribution.** Upstream work remains clearly credited and licensed.
-
-## Run locally
+## Run it
 
 ```bash
 npm install
 npm run dev
 ```
 
-The development server uses HTTPS because browser camera and microphone access require a secure context on devices other than `localhost`.
+Vite prints a local HTTPS address and a network address. Then:
 
-Existing upstream commands remain available:
+1. Open the network address on both devices.
+2. Navigate to `/talk/` on both.
+3. Accept the development certificate warning when prompted.
+4. Allow camera and microphone access.
+5. Press **Start conversation** on both devices.
+6. Aim each front camera at the other device's QR code.
+7. Wait until the receiver indicator says **Reading**.
+
+Headphones are strongly recommended to reduce acoustic echo and feedback.
+
+## Why the implementation is small
+
+The live mode is concentrated in four files:
+
+- `talk/index.html` — two-way interface and alignment preview;
+- `talk/main.ts` — capture, transmission, camera decoding, recovery, and playback;
+- `shared/voice.ts` — the compact `OV1` live-audio container;
+- `tests/voice.test.ts` — protocol round-trip and malformed-payload tests.
+
+It reuses the existing Decimen QR renderer, camera worker, ZXing WASM decoder, frame protocol, fountain encoder/decoder, PWA build, and wake-lock support.
+
+## Current limitations
+
+- Physical alignment is the main practical constraint. Both front cameras must see the opposite QR while both screens remain visible.
+- Audio usually has noticeable experimental latency rather than conventional call latency.
+- `MediaRecorder` restarts for every group so each group can be decoded independently; this may introduce small seams and container overhead.
+- Cross-browser communication depends on the receiver supporting the audio format selected by the sender.
+- Speaker output can feed back into the microphone despite requested browser echo cancellation.
+- Performance varies with camera quality, autofocus, screen brightness, reflections, thermal throttling, and browser behaviour.
+- The optical stream is not encrypted. Any camera with line of sight may be able to decode it.
+
+## Existing file-transfer modes
+
+The repository retains Decimen's original fountain-coded optical file and text transfer modes under `/send/` and `/receive/`.
 
 ```bash
 npm test
@@ -91,33 +99,27 @@ npm run build:standalone
 npm run build:all
 ```
 
+The standalone builds remain focused on file transfer. Optical Voice ships through the main PWA build.
+
 ## Documentation
 
+- [Changelog](CHANGELOG.md)
 - [Roadmap](ROADMAP.md)
 - [Live audio architecture](docs/voice/architecture.md)
-- [Protocol direction](docs/voice/protocol.md)
+- [OV1 protocol](docs/voice/protocol.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 
-The inherited Decimen documentation remains under `docs/user` and `docs/technical` while the new live-audio design is developed under `docs/voice`.
-
-## Contributing
-
-The project is in an early research and prototyping phase. Contributions involving browser audio, WebCodecs, Opus, real-time media, forward-error correction, QR/camera performance, latency measurement, accessibility, and mobile testing are especially useful.
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-
-## Maintainer and attribution
+## Project and attribution
 
 **Optical Voice project lead and maintainer:**  
 Harold Ponte da Costa — [@ItzHarold](https://github.com/ItzHarold)
 
-**Original optical-transfer foundation:**  
-Decimen Optical Transfer by Evan Crawley (Bash Alarmist).
+Optical Voice is based on [Decimen Optical Transfer](https://github.com/bashalarmistalt/decimen-optical-transfer), created by Evan Crawley (Bash Alarmist). Decimen provides the original animated-QR file transport, camera/WASM decoding, and Luby Transform fountain-code foundation.
 
-This repository retains the upstream Git history and MIT license. Copyright in upstream code remains with its original author. New Optical Voice contributions belong to their respective contributors and are distributed under the same MIT license.
+The upstream Git history and MIT licence are retained. Copyright in inherited code remains with its original author. New Optical Voice contributions belong to their respective contributors and are distributed under the same MIT licence.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Open source under the MIT License. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md).

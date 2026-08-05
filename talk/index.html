@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Optical Voice — live conversation through light</title>
+    <meta
+      name="description"
+      content="Two-way live voice communication between nearby devices using only screens, front cameras, microphones, and speakers."
+    />
+    <meta name="theme-color" content="#070a11" />
+    <link rel="icon" href="../decimen_logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      .talk-page { min-height: 100svh; background: #070a11; }
+      .talk-shell { width: min(1240px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 56px; }
+      .talk-intro { display: grid; gap: 10px; margin-bottom: 24px; }
+      .talk-intro h1 { margin: 0; font-size: clamp(2rem, 7vw, 4.6rem); line-height: .95; }
+      .talk-intro p { max-width: 760px; margin: 0; color: var(--muted); font-size: 1.02rem; }
+      .talk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 320px); gap: 18px; align-items: start; }
+      .media-grid { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(220px, .55fr); gap: 18px; align-items: start; }
+      .optical-stage, .camera-card, .talk-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+      .optical-stage {
+        min-width: 0;
+        min-height: 420px;
+        padding: 18px;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        isolation: isolate;
+        contain: layout paint;
+      }
+      .qr-wrap { min-width: 0; width: 100%; display: grid; place-items: center; gap: 10px; }
+      .stage-label { margin: 0; color: var(--muted); font-size: .74rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+      #qr {
+        position: relative;
+        z-index: 1;
+        display: block;
+        max-width: 100%;
+        max-height: 72svh;
+        background: white;
+        border-radius: 12px;
+      }
+      .camera-card {
+        min-width: 0;
+        width: 100%;
+        padding: 16px;
+        display: grid;
+        gap: 10px;
+        align-content: start;
+        overflow: hidden;
+        isolation: isolate;
+        contain: layout paint;
+      }
+      .camera-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .camera-heading span { color: var(--muted); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      #scan-stat { color: var(--muted); font-size: .78rem; font-weight: 650; }
+      .camera-frame { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border: 2px solid var(--line); border-radius: 14px; background: #111; transition: border-color .2s, box-shadow .2s; }
+      .camera-card.locked .camera-frame { border-color: #65d89b; box-shadow: 0 0 0 3px rgba(101,216,155,.13); }
+      .camera-card.locked #scan-stat { color: #86e9b3; }
+      #camera-preview { width: 100%; height: 100%; display: block; background: #111; }
+      #camera-source {
+        position: fixed !important;
+        left: -10000px !important;
+        top: 0 !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        clip-path: inset(100%) !important;
+      }
+      .scan-guide { position: absolute; left: 50%; top: 50%; width: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,.88); border-radius: 12px; box-shadow: 0 0 0 999px rgba(0,0,0,.16); pointer-events: none; }
+      .scan-guide::after { content: "CENTER OTHER QR"; position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); white-space: nowrap; padding: 3px 6px; border-radius: 6px; background: rgba(7,10,17,.72); color: #fff; font-size: .58rem; font-weight: 750; letter-spacing: .08em; }
+      .camera-hint { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.4; }
+      .talk-panel { padding: 22px; display: grid; gap: 18px; }
+      .talk-panel h2 { margin: 0; font-size: 1.15rem; }
+      .talk-actions { display: grid; gap: 10px; }
+      .talk-button { border: 0; border-radius: 12px; padding: 14px 16px; font: inherit; font-weight: 750; cursor: pointer; }
+      .talk-button.primary { background: #fff; color: #070a11; }
+      .talk-button.secondary { background: transparent; color: inherit; border: 1px solid var(--line); }
+      .talk-status { min-height: 48px; margin: 0; color: var(--muted); line-height: 1.45; }
+      .talk-status.error { color: #ff9d9d; }
+      .talk-stats { display: grid; grid-template-columns: 1fr; gap: 8px; }
+      .talk-stat { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--muted); }
+      .talk-stat strong { color: var(--text); font-weight: 650; text-align: right; }
+      .talk-notes { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 8px; }
+      .experimental { display: inline-flex; width: fit-content; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
+      @media (max-width: 980px) {
+        .talk-grid { grid-template-columns: 1fr; }
+        .talk-panel { order: 2; }
+      }
+      @media (max-width: 760px) {
+        .media-grid { grid-template-columns: 1fr; }
+        .optical-stage { min-height: 340px; padding: 12px; }
+        .camera-card { width: 100%; }
+        .talk-shell { width: min(100% - 20px, 1240px); padding-top: 20px; }
+      }
+    </style>
+  </head>
+  <body class="talk-page">
+    <header class="site-header">
+      <a class="brand" href="../">Optical Voice</a>
+      <nav class="mode-nav" aria-label="Mode">
+        <a href="../send/">Files</a>
+        <a href="./" aria-current="page">Talk</a>
+      </nav>
+    </header>
+
+    <main class="talk-shell">
+      <section class="talk-intro">
+        <span class="experimental">Experimental full duplex</span>
+        <h1>Talk through light.</h1>
+        <p>
+          Open this page on two devices, press start on both, and face their screens toward
+          each other. Each screen transmits live compressed speech while its front camera
+          receives the other device's optical stream.
+        </p>
+      </section>
+
+      <div class="talk-grid">
+        <div class="media-grid">
+          <section class="optical-stage" aria-label="Live optical transmitter">
+            <div class="qr-wrap">
+              <p class="stage-label">This screen transmits</p>
+              <canvas id="qr" width="360" height="360"></canvas>
+            </div>
+          </section>
+
+          <section id="camera-card" class="camera-card" aria-label="Front camera receiver preview">
+            <div class="camera-heading">
+              <span>This camera receives</span>
+              <strong id="scan-stat">Idle</strong>
+            </div>
+            <div class="camera-frame">
+              <canvas id="camera-preview" width="480" height="360" aria-label="Front camera preview"></canvas>
+              <div class="scan-guide" aria-hidden="true"></div>
+            </div>
+            <p class="camera-hint">Move the other device until its entire QR nearly fills the guide square.</p>
+          </section>
+        </div>
+
+        <aside class="talk-panel">
+          <h2>Conversation</h2>
+          <p id="status" class="talk-status">Press start on both devices when they are facing each other.</p>
+          <div class="talk-actions">
+            <button id="start" class="talk-button primary" type="button">Start conversation</button>
+            <button id="mute" class="talk-button secondary" type="button" hidden>Mute microphone</button>
+          </div>
+
+          <div class="talk-stats" aria-label="Live statistics">
+            <div class="talk-stat"><span>Transmit</span><strong id="tx-stat">0 sent</strong></div>
+            <div class="talk-stat"><span>Receive</span><strong id="rx-stat">0 received</strong></div>
+            <div class="talk-stat"><span>Playback</span><strong id="buffer-stat">0.0 s buffer</strong></div>
+          </div>
+
+          <ul class="talk-notes">
+            <li>The actual camera video is hidden; only this canvas preview is displayed.</li>
+            <li>Center the opposite QR inside the receiver guide until it says Reading.</li>
+            <li>Headphones strongly reduce echo and feedback.</li>
+          </ul>
+        </aside>
+      </div>
+    </main>
+
+    <video id="camera-source" muted playsinline disablepictureinpicture aria-hidden="true"></video>
+
+    <footer class="site-footer">
+      <span class="footer-id">
+        <span>Optical Voice</span>
+        <span>Led by Harold Ponte da Costa · built on Decimen · MIT</span>
+      </span>
+      <nav class="footer-links" aria-label="Project links">
+        <a href="https://github.com/ItzHarold/optical-voice">GitHub</a>
+      </nav>
+    </footer>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

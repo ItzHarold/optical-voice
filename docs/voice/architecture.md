@@ -2,127 +2,101 @@
 
 ## Objective
 
-Optical Voice should carry speech continuously from one nearby device to another using a display as the transmitter and a camera as the receiver. The first implementation should optimise for intelligibility, observability, and recoverable failure—not maximum audio quality.
+Optical Voice carries speech between nearby devices using each screen as a transmitter and each front camera as a receiver. Version 0.1 prioritises a small implementation, independently recoverable speech groups, bounded delay, and reuse of the proven Decimen optical transport.
 
-## Proposed pipeline
+A phone-to-laptop test successfully reconstructed and played live optical audio while the sender was still speaking. The main remaining challenge is maintaining camera-to-screen alignment in both directions at once.
+
+## Implemented pipeline
 
 ```text
-getUserMedia microphone track
-  → audio encoder
-  → encoded audio frames
-  → short transmission group
-  → optical packetisation and redundancy
+microphone track
+  → 600 ms MediaRecorder blob
+  → OV1 voice-group container
+  → inherited LT fountain encoder
+  → inherited Decimen frame protocol
   → animated QR renderer
-  → remote camera capture
-  → QR decode workers
-  → group recovery
-  → encoded-frame reorder queue
-  → jitter buffer
-  → audio decoder
-  → scheduled playback
+  → remote front camera
+  → inherited ZXing WASM QR worker
+  → per-group LT decoder
+  → checksum + OV1 validation
+  → browser audio decoder
+  → scheduled playback buffer
 ```
 
-## Why the file protocol is insufficient
+The same `/talk/` page runs the transmission and reception pipelines simultaneously.
 
-The inherited Decimen protocol assumes a finite payload with a known total length and hash. Its fountain encoder may generate unlimited repair symbols for that one payload, and the receiver offers the result only after reconstruction completes.
+## Why bounded groups
 
-Live speech has no final length. Waiting for a complete stream is impossible, and indefinite retransmission is undesirable because old speech loses value after its playback deadline.
+The inherited Decimen file protocol assumes one finite payload. Live speech has no final length, and old speech quickly loses value.
 
-The live protocol should therefore use a sequence of bounded **transmission groups**. Each group contains a short span of encoded audio and can be recovered independently.
+Optical Voice therefore treats a conversation as a sequence of short finite payloads. Every recording group is independently encoded, transmitted, recovered, verified, and decoded. Missing a group damages a short span of speech instead of blocking everything that follows.
 
-## Suggested timing model
+## Compact implementation
 
-A starting point for experiments:
-
-- codec frames: 20 ms;
-- transmission group: 250–500 ms of encoded audio;
-- receiver target buffer: 500–1000 ms;
-- stale-group policy: discard groups that cannot meet their playback deadline;
-- timestamp base: monotonic session-relative time.
-
-These values are hypotheses, not protocol guarantees. Benchmarks should determine the final defaults.
-
-## Sender responsibilities
-
-The sender should:
-
-1. Request a mono microphone track.
-2. Encode speech continuously at a configurable low bitrate.
-3. Collect encoded frames into bounded groups.
-4. Add group identity, timing, codec, and integrity metadata.
-5. Produce source and repair packets for each group.
-6. Schedule a limited number of optical frames before advancing.
-7. Expose encoder delay, queue depth, rendered FPS, and dropped render frames.
-
-The sender must not allow an old group to monopolise the display. Once a group is too old to be useful, transmission should advance even if complete recovery is not guaranteed.
-
-## Receiver responsibilities
-
-The receiver should:
-
-1. Capture camera frames continuously.
-2. Decode optical packets in workers.
-3. Route packets by session and group ID.
-4. Recover groups independently.
-5. Validate recovered group integrity.
-6. Reorder encoded frames by timestamp.
-7. maintain a bounded jitter buffer.
-8. Schedule decoded audio against the local audio clock.
-9. Conceal or skip missing speech rather than blocking indefinitely.
-10. Expose capture FPS, decode FPS, group recovery time, packet loss, late loss, and playback buffer depth.
-
-## Codec strategy
-
-Opus is the preferred starting codec because it is designed for interactive speech and is commonly available through browser media APIs. Browser support differs across `MediaRecorder`, WebCodecs, and platforms, so codec selection must be capability-driven.
-
-The first recorded-message milestone may use `MediaRecorder` and WebM/Opus. True low-latency streaming may need WebCodecs or an explicit WASM codec to control frame boundaries, timestamps, and container overhead.
-
-Codec and transport must remain separate modules. The optical protocol should identify the codec rather than assume one permanent encoding.
-
-## Error recovery
-
-File transfer can spend extra time collecting fountain symbols until every byte is recovered. Live audio cannot.
-
-The live transport needs bounded redundancy. Candidate approaches include:
-
-- a small LT/fountain code per transmission group;
-- systematic source packets plus parity packets;
-- duplication of particularly important metadata;
-- unequal protection for control information and audio payload.
-
-The selected design should be driven by measured camera-loss patterns. Recovery probability must be balanced against added latency.
-
-## Full-duplex considerations
-
-A full-duplex page must capture the front camera while displaying a high-contrast changing code and simultaneously capture/play audio. Expected issues include:
-
-- acoustic echo and feedback;
-- screen brightness affecting camera exposure;
-- camera field-of-view and physical alignment;
-- CPU/GPU contention between QR generation, decode workers, and audio;
-- device heat and thermal throttling;
-- mobile browser restrictions around autoplay and background execution.
-
-Push-to-talk is therefore the required intermediate product. Full duplex remains an experimental phase with a mandatory push-to-talk fallback.
-
-## Module direction
-
-A likely structure is:
+The new live functionality is intentionally concentrated:
 
 ```text
-voice/
-  capture.ts
-  codec.ts
-  group-builder.ts
-  sender.ts
-  receiver.ts
-  jitter-buffer.ts
-  playback.ts
-  metrics.ts
-
-shared/
-  voice-protocol.ts
-  optical-packet-stream.ts
+talk/index.html     interface, layout, and alignment preview
+talk/main.ts        capture, transport, receive, recovery, and playback
+shared/voice.ts     OV1 pack/unpack functions
+tests/voice.test.ts wire-format tests
 ```
 
-This structure is directional and may evolve through implementation pull requests.
+Everything else is reused from Decimen. This keeps the proof of concept inspectable and avoids introducing a large framework before measurements justify one.
+
+## Sender
+
+The sender:
+
+1. Requests camera and microphone access.
+2. Creates an audio-only `MediaStream` so camera video can never enter the payload.
+3. Records approximately 600 ms at a requested 12 kbit/s.
+4. Adds stream ID, group ID, MIME type, and length metadata.
+5. Fountain-encodes the complete group using the existing Decimen primitives.
+6. Displays bounded repair data at 15 QR frames per second.
+7. Keeps at most three waiting groups and drops the oldest when overloaded.
+
+The bounded queue is a core live-media rule. When the optical channel falls behind, the system loses old words rather than becoming an ever-growing delayed recording.
+
+## Receiver
+
+The receiver:
+
+1. Captures the front-camera video stream.
+2. Draws a mirrored preview into a separate canvas that cannot cover the transmitted QR.
+3. Sends one camera image at a time to the existing ZXing WASM worker.
+4. Usually scans a centred crop for speed and periodically checks the full image.
+5. Limits decoder input to roughly 900 pixels on its longest side.
+6. Routes valid frames by Decimen stream identity.
+7. Keeps up to four LT decoders so frames completing around QR transitions do not destroy useful progress.
+8. Verifies and unpacks complete OV1 groups.
+9. Rejects self-reflections, duplicates, and older group IDs.
+10. Decodes the media blob and schedules it against an `AudioContext` clock.
+11. Resets excessive buffered delay instead of preserving stale speech.
+
+## Simultaneous operation
+
+Both devices can record, render, scan, decode, and play at the same time. The browser is asked for echo cancellation, noise suppression, and automatic gain control. Headphones remain the most reliable way to avoid feedback.
+
+The difficult part is physical rather than conceptual: each front camera must continuously see the opposite QR while each screen remains visible to the other camera. A one-way optical path is straightforward; maintaining both paths simultaneously requires careful positioning.
+
+## Version 0.1 parameters
+
+- recording group: approximately 600 ms;
+- requested audio bitrate: 12 kbit/s;
+- QR frame size: 640 bytes total;
+- LT source block: 620 bytes after the inherited 20-byte frame header;
+- transmission rate: 15 QR frames per second;
+- redundancy: `max(9, ceil(K × 2.5) + 3)` frames per group;
+- waiting transmit queue: three groups;
+- receiver decoders: up to four concurrent group streams;
+- playback lead: 400 ms;
+- queued-playback reset threshold: approximately 2.5 seconds.
+
+These are proof-of-concept values, not final protocol guarantees.
+
+## Known trade-offs
+
+Restarting `MediaRecorder` for every group introduces container overhead and may create small seams. It was chosen because it makes every group independently decodable with little code and broadly available browser APIs.
+
+A later version may use WebCodecs or a WASM Opus implementation for packet-level control. That could reduce overhead and improve continuity, but it would substantially increase complexity and compatibility work.

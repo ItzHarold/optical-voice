@@ -1,78 +1,59 @@
 # Optical Voice roadmap
 
-This roadmap deliberately separates proof of feasibility from a polished communication experience. Each phase should produce measurable evidence before the next phase begins.
+Optical Voice v0.1 proves that live microphone audio can be carried through animated optical codes and reconstructed while the sender is still speaking. The next work is no longer basic feasibility; it is alignment, measurement, compatibility, and resilience.
 
-## Phase 0 — Project foundation
+## Completed — v0.1 proof of concept
 
-- [x] Preserve the upstream fork relationship and Git history.
-- [x] Establish Optical Voice branding, ownership, attribution, and contribution rules.
-- [x] Document the proposed live-media architecture.
-- [ ] Confirm the inherited test and production builds pass unchanged.
-- [ ] Add repeatable optical-channel benchmarks for latency, loss, and goodput.
+- [x] Preserve the upstream fork relationship, Git history, attribution, and MIT licence.
+- [x] Keep Decimen's inherited file and text transfer modes available.
+- [x] Capture low-bitrate microphone audio with `MediaRecorder`.
+- [x] Split speech into short independently playable groups.
+- [x] Define and test the compact `OV1` live voice container.
+- [x] Reuse the inherited fountain-coded QR transport.
+- [x] Decode overlapping group transitions without resetting useful progress.
+- [x] Verify recovered groups before playback.
+- [x] Schedule playback with a small bounded buffer.
+- [x] Discard stale queued speech instead of allowing unbounded delay.
+- [x] Combine transmit and receive into one `/talk/` page.
+- [x] Keep the camera preview physically separate from the transmitted QR.
+- [x] Add camera alignment guidance and live **Searching / Reading** feedback.
+- [x] Demonstrate live optical audio from a phone to a laptop.
 
-**Exit criterion:** contributors can build the project, understand its scope, and reproduce baseline Decimen performance.
+## Next — physical usability
 
-## Phase 1 — Recorded optical voice messages
+- [ ] Make simultaneous two-camera alignment easier and reproducible.
+- [ ] Document successful device, browser, distance, brightness, and orientation combinations.
+- [ ] Confirm sustained simultaneous two-way speech on at least one documented device pair.
+- [ ] Add a push-to-talk fallback for arrangements that cannot maintain full duplex.
+- [ ] Add clearer feedback for the remote direction, not only the local camera lock.
 
-- [ ] Capture microphone audio with `MediaRecorder` using Opus where supported.
-- [ ] Transfer a complete short recording through the existing fountain-coded file protocol.
-- [ ] Preserve MIME information and verify the payload before playback.
-- [ ] Add browser compatibility and maximum-duration tests.
+## Next — measurement and adaptation
 
-**Exit criterion:** one device records a voice message and another receives and plays it without any network transport.
+- [ ] Measure glass-to-glass latency, decoded QR rate, group recovery rate, and dropped speech.
+- [ ] Tune bitrate, QR density, frame rate, group duration, and redundancy from measurements.
+- [ ] Adapt transmission settings to observed camera decode performance.
+- [ ] Measure CPU, battery use, device temperature, autofocus, exposure, and long-session stability.
+- [ ] Build a public device and browser compatibility matrix.
 
-## Phase 2 — One-way live audio
+## Later — quality and security
 
-- [ ] Define the first version of the live voice packet header.
-- [ ] Split audio into short independently recoverable transmission groups.
-- [ ] Encode and display groups while the microphone remains active.
-- [ ] Decode groups incrementally instead of waiting for a complete file.
-- [ ] Implement a receiver jitter buffer and scheduled playback.
-- [ ] Discard audio that misses its playback deadline.
-- [ ] Expose end-to-end latency, loss, recovery, and buffer metrics.
+- [ ] Replace recorder restart boundaries with a lower-level streaming codec where practical.
+- [ ] Improve concealment when speech groups are missed.
+- [ ] Add automated browser and protocol compatibility tests.
+- [ ] Improve accessibility and connection guidance.
+- [ ] Add optional authenticated encryption above the optical transport.
+- [ ] Publish reproducible demonstrations and benchmarks.
 
-Initial targets:
+## Current prototype parameters
 
-- mono speech;
-- Opus or another browser-supported low-bitrate speech codec;
-- 250–500 ms optical recovery groups;
-- less than 2 seconds glass-to-glass latency on supported devices;
-- intelligible playback under moderate dropped-frame conditions.
+- approximately 600 ms per independently recoverable audio group;
+- requested 12 kbit/s encoded audio;
+- 640 bytes per QR frame, including the inherited 20-byte frame header;
+- 15 transmitted QR frames per second;
+- bounded fountain redundancy per group;
+- maximum of three waiting transmit groups;
+- small scheduled playback lead with excessive queued delay discarded.
 
-**Exit criterion:** continuous speech captured on one device is heard on another while the speaker is still talking.
+## Not promised
 
-## Phase 3 — Optical push-to-talk
-
-- [ ] Combine camera receive and screen transmit into one page.
-- [ ] Add session identity and direction/turn state.
-- [ ] Add press-and-hold or tap-to-talk controls.
-- [ ] Require or strongly recommend headphones for initial testing.
-- [ ] Handle interruption, session restart, and device rotation.
-- [ ] Test front-camera operation while the same phone displays a QR stream.
-
-**Exit criterion:** two devices can alternate speaking in a walkie-talkie-style conversation with no network path.
-
-## Phase 4 — Resilience and usability
-
-- [ ] Tune bitrate, QR density, frame rate, group size, and redundancy automatically.
-- [ ] Add visual alignment and distance guidance.
-- [ ] Adapt to camera decode performance and thermal throttling.
-- [ ] Add accessibility support and clear failure states.
-- [ ] Build a device/browser compatibility matrix.
-- [ ] Add optional end-to-end encryption above the optical transport.
-
-**Exit criterion:** non-developers can establish and maintain a push-to-talk session on a documented set of devices.
-
-## Phase 5 — Experimental full duplex
-
-- [ ] Transmit and receive continuously on both devices.
-- [ ] Investigate speaker-to-microphone echo cancellation.
-- [ ] Evaluate alternating optical time slots if simultaneous display/capture interferes.
-- [ ] Measure CPU, battery, heat, camera exposure, and audio stability.
-- [ ] Define graceful fallback from full duplex to push-to-talk.
-
-**Exit criterion:** both participants can speak and hear simultaneously on at least one documented device pair, with reproducible test results.
-
-## Not currently promised
-
-The roadmap does not promise conventional phone-call latency, universal browser support, long-distance communication, operation without line of sight, or better performance than Wi-Fi/Bluetooth. Those claims require evidence and are outside the initial goal.
+The project does not promise conventional phone-call latency, universal browser support, long-distance communication, operation without line of sight, confidentiality, or better performance than radio-based communication. Those claims require evidence beyond the v0.1 proof of concept.
