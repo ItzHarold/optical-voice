@@ -27,7 +27,7 @@ const SITE_URL = process.env.VITE_SITE_URL ?? "https://itzharold.github.io/optic
 
 // HTTPS always: camera and microphone access require a secure context on LAN devices.
 // Modes:
-//   (default)           the site — home, file tools, and live optical talk
+//   (default)           the site — home, file tools, live optical talk, and adaptive prototype
 //   demo                sender locked to the bundled payloads
 //   standalone-send     one self-contained decimen-sender.html
 //   standalone-receive  one self-contained decimen-receiver.html
@@ -142,6 +142,7 @@ export default defineConfig(({ mode }) => {
           send: resolve(__dirname, "send/index.html"),
           receive: resolve(__dirname, "receive/index.html"),
           talk: resolve(__dirname, "talk/index.html"),
+          adaptive: resolve(__dirname, "adaptive/index.html"),
         },
       },
     },
