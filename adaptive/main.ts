@@ -19,74 +19,66 @@ const PROFILES = [
   { name: "Balanced", frameBytes: 1465, fps: 24 },
   { name: "Fast", frameBytes: 2331, fps: 30 },
 ] as const;
+const TONES = { slower: 1550, faster: 1850, hold: 2150, done: 2450 } as const;
 const MARGIN = 4;
-const AUDIO_COMMANDS = {
-  slower: 1550,
-  faster: 1850,
-  hold: 2150,
-  done: 2450,
-} as const;
-const COMMAND_DURATION_MS = 180;
-const COMMAND_GAP_MS = 120;
-const COMMAND_COOLDOWN_MS = 900;
+const TONE_MS = 180;
 
 type Role = "send" | "receive";
-type Command = keyof typeof AUDIO_COMMANDS;
+type Command = keyof typeof TONES;
+type ProfileIndex = 0 | 1 | 2;
 type VideoWithFrames = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: () => void) => number;
 };
 
-const roleSend = document.getElementById("role-send") as HTMLButtonElement;
-const roleReceive = document.getElementById("role-receive") as HTMLButtonElement;
-const panelTitle = document.getElementById("panel-title")!;
-const senderControls = document.getElementById("sender-controls")!;
-const receiverControls = document.getElementById("receiver-controls")!;
-const sendStage = document.getElementById("send-stage")!;
-const receiveStage = document.getElementById("receive-stage")!;
-const fileInput = document.getElementById("file") as HTMLInputElement;
-const startSend = document.getElementById("start-send") as HTMLButtonElement;
-const startReceive = document.getElementById("start-receive") as HTMLButtonElement;
-const qrCanvas = document.getElementById("qr") as HTMLCanvasElement;
-const video = document.getElementById("video") as HTMLVideoElement;
-const status = document.getElementById("status")!;
-const profileStat = document.getElementById("profile-stat")!;
-const streamStat = document.getElementById("stream-stat")!;
-const audioStat = document.getElementById("audio-stat")!;
-const feedbackStat = document.getElementById("feedback-stat")!;
-const progressBar = document.getElementById("progress-bar")!;
-const progressLabel = document.getElementById("progress-label")!;
-const receivedResult = document.getElementById("received-result")!;
+const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const roleSend = byId<HTMLButtonElement>("role-send");
+const roleReceive = byId<HTMLButtonElement>("role-receive");
+const panelTitle = byId<HTMLElement>("panel-title");
+const senderControls = byId<HTMLElement>("sender-controls");
+const receiverControls = byId<HTMLElement>("receiver-controls");
+const sendStage = byId<HTMLElement>("send-stage");
+const receiveStage = byId<HTMLElement>("receive-stage");
+const fileInput = byId<HTMLInputElement>("file");
+const startSend = byId<HTMLButtonElement>("start-send");
+const startReceive = byId<HTMLButtonElement>("start-receive");
+const qrCanvas = byId<HTMLCanvasElement>("qr");
+const video = byId<HTMLVideoElement>("video");
+const status = byId<HTMLElement>("status");
+const profileStat = byId<HTMLElement>("profile-stat");
+const streamStat = byId<HTMLElement>("stream-stat");
+const audioStat = byId<HTMLElement>("audio-stat");
+const feedbackStat = byId<HTMLElement>("feedback-stat");
+const progressBar = byId<HTMLElement>("progress-bar");
+const progressLabel = byId<HTMLElement>("progress-label");
+const receivedResult = byId<HTMLElement>("received-result");
 
 let role: Role = "send";
 let generation = 0;
+let profileIndex: ProfileIndex = 1;
 let sendRunning = false;
 let receiveRunning = false;
-let senderProfile = 1;
-let senderPayload: Uint8Array | null = null;
-let senderName = "";
-let senderMime = "application/octet-stream";
-let senderSession = 0;
-let senderEncoder: LTEncoder | null = null;
-let senderHeader: FrameHeader | null = null;
-let senderSeq = 0;
-let senderProfileGeneration = 0;
-let microphoneStream: MediaStream | null = null;
-let cameraStream: MediaStream | null = null;
-let audioContext: AudioContext | null = null;
+let payload: Uint8Array | null = null;
+let encoder: LTEncoder | null = null;
+let header: FrameHeader | null = null;
+let seq = 0;
+let profileGeneration = 0;
+let mic: MediaStream | null = null;
+let camera: MediaStream | null = null;
+let audio: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
-let scanWorker: Worker | null = null;
+let worker: Worker | null = null;
 let workerBusy = false;
-let receiverDecoder: LTDecoder | null = null;
-let receiverIdentity = "";
+let decoder: LTDecoder | null = null;
 let receiverHeader: FrameHeader | null = null;
+let receiverIdentity = "";
 let receiverFrames = 0;
 let receiverLastFrames = 0;
-let receiverLastProgressAt = 0;
+let receiverLastSampleAt = 0;
 let receiverLastCommandAt = 0;
 let receiverLastDecodedAt = 0;
-let receiverCompleted = false;
-let lastHeardCommandAt = 0;
-let lastHeardCommand: Command | null = null;
+let completed = false;
+let lastHeard: Command | null = null;
+let lastHeardAt = 0;
 
 function randomId(): number {
   return (crypto.getRandomValues(new Uint16Array(1))[0]! || 1) & 0xffff;
@@ -114,43 +106,47 @@ function drawIdle(label = "ADAPTIVE"): void {
   ctx.fillText(label, size / 2, size / 2);
 }
 
-function stopEverything(): void {
+function resetMedia(): void {
+  mic?.getTracks().forEach((track) => track.stop());
+  camera?.getTracks().forEach((track) => track.stop());
+  mic = null;
+  camera = null;
+  worker?.terminate();
+  worker = null;
+  workerBusy = false;
+  analyser = null;
+  void audio?.close();
+  audio = null;
+  video.pause();
+  video.srcObject = null;
+}
+
+function resetState(): void {
   generation++;
   sendRunning = false;
   receiveRunning = false;
-  senderPayload = null;
-  senderEncoder = null;
-  senderHeader = null;
-  microphoneStream?.getTracks().forEach((track) => track.stop());
-  cameraStream?.getTracks().forEach((track) => track.stop());
-  microphoneStream = null;
-  cameraStream = null;
-  scanWorker?.terminate();
-  scanWorker = null;
-  workerBusy = false;
-  analyser = null;
-  void audioContext?.close();
-  audioContext = null;
-  video.pause();
-  video.srcObject = null;
-  receiverDecoder = null;
+  payload = null;
+  encoder = null;
+  header = null;
+  decoder = null;
   receiverHeader = null;
   receiverIdentity = "";
   receiverFrames = 0;
-  receiverCompleted = false;
+  completed = false;
+  resetMedia();
   startSend.textContent = "Start adaptive transfer";
   startReceive.textContent = "Start camera + feedback";
   streamStat.textContent = "Idle";
   audioStat.textContent = "Idle";
   feedbackStat.textContent = "No feedback yet.";
-  progressBar.setAttribute("style", "width: 0%");
+  progressBar.style.width = "0%";
   progressLabel.textContent = "0% · waiting for optical frames";
   receivedResult.replaceChildren();
 }
 
 function setRole(next: Role): void {
   if (next === role) return;
-  stopEverything();
+  resetState();
   role = next;
   const sending = role === "send";
   roleSend.classList.toggle("active", sending);
@@ -160,7 +156,7 @@ function setRole(next: Role): void {
   sendStage.hidden = !sending;
   receiveStage.hidden = sending;
   panelTitle.textContent = sending ? "Adaptive sender" : "Adaptive receiver";
-  profileStat.textContent = sending ? PROFILES[senderProfile].name : "Receiver decides";
+  profileStat.textContent = sending ? PROFILES[profileIndex].name : "Receiver decides";
   setStatus(
     sending
       ? "Choose a file, then start. Keep the receiving device close enough to hear feedback tones."
@@ -168,26 +164,27 @@ function setRole(next: Role): void {
   );
 }
 
-roleSend.addEventListener("click", () => setRole("send"));
-roleReceive.addEventListener("click", () => setRole("receive"));
+function clampProfile(index: number): ProfileIndex {
+  return Math.max(0, Math.min(2, index)) as ProfileIndex;
+}
 
-function rebuildSenderEncoder(profileIndex: number): void {
-  if (!senderPayload) return;
-  senderProfile = Math.max(0, Math.min(PROFILES.length - 1, profileIndex));
-  const profile = PROFILES[senderProfile];
+function rebuildSender(nextProfile: number): void {
+  if (!payload) return;
+  profileIndex = clampProfile(nextProfile);
+  const profile = PROFILES[profileIndex];
   const blockLen = blockLength(profile.frameBytes);
-  senderSession = randomId();
-  senderEncoder = new LTEncoder(senderPayload, blockLen, senderSession);
-  senderHeader = {
-    sessionId: senderSession,
+  const sessionId = randomId();
+  encoder = new LTEncoder(payload, blockLen, sessionId);
+  header = {
+    sessionId,
     seq: 0,
-    k: senderEncoder.k,
+    k: encoder.k,
     blockLen,
-    totalLen: senderPayload.length,
-    payloadFnv: fnv1a(senderPayload),
+    totalLen: payload.length,
+    payloadFnv: fnv1a(payload),
   };
-  senderSeq = 0;
-  senderProfileGeneration++;
+  seq = 0;
+  profileGeneration++;
   profileStat.textContent = profile.name;
   streamStat.textContent = `${profile.fps} fps · ${profile.frameBytes} B/frame`;
 }
@@ -215,21 +212,20 @@ function drawFrame(bytes: Uint8Array): void {
   ctx.drawImage(staging, 0, 0, qrCanvas.width, qrCanvas.height);
 }
 
-function startQrLoop(gen: number): void {
+function qrLoop(gen: number): void {
   let localProfileGeneration = -1;
   let nextAt = performance.now();
   const tick = (now: number) => {
     if (!sendRunning || gen !== generation) return;
     requestAnimationFrame(tick);
-    const profile = PROFILES[senderProfile];
-    if (localProfileGeneration !== senderProfileGeneration) {
-      localProfileGeneration = senderProfileGeneration;
+    const profile = PROFILES[profileIndex];
+    if (localProfileGeneration !== profileGeneration) {
+      localProfileGeneration = profileGeneration;
       nextAt = now;
     }
-    if (now < nextAt || !senderEncoder || !senderHeader) return;
-    const seq = senderSeq++;
-    const frame = packFrame({ ...senderHeader, seq }, senderEncoder.encode(seq));
-    drawFrame(frame);
+    if (now < nextAt || !encoder || !header) return;
+    const currentSeq = seq++;
+    drawFrame(packFrame({ ...header, seq: currentSeq }, encoder.encode(currentSeq)));
     const interval = 1000 / profile.fps;
     nextAt += interval;
     if (now - nextAt > interval * 3) nextAt = now + interval;
@@ -237,50 +233,45 @@ function startQrLoop(gen: number): void {
   requestAnimationFrame(tick);
 }
 
-function closestCommand(frequency: number): Command | null {
-  let best: Command | null = null;
-  let distance = Number.POSITIVE_INFINITY;
-  for (const [command, tone] of Object.entries(AUDIO_COMMANDS) as [Command, number][]) {
-    const delta = Math.abs(tone - frequency);
-    if (delta < distance) {
-      distance = delta;
-      best = command;
-    }
-  }
-  return distance <= 90 ? best : null;
-}
-
-function dominantFrequency(analyserNode: AnalyserNode, context: AudioContext): { frequency: number; strength: number } {
-  const data = new Float32Array(analyserNode.frequencyBinCount);
-  analyserNode.getFloatFrequencyData(data);
+function dominantTone(): { command: Command | null; frequency: number } {
+  if (!analyser || !audio) return { command: null, frequency: 0 };
+  const bins = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(bins);
   let bestIndex = 0;
   let bestDb = -Infinity;
-  const minIndex = Math.floor((1300 * analyserNode.fftSize) / context.sampleRate);
-  const maxIndex = Math.min(data.length - 1, Math.ceil((2650 * analyserNode.fftSize) / context.sampleRate));
-  for (let index = minIndex; index <= maxIndex; index++) {
-    const value = data[index] ?? -Infinity;
+  const min = Math.floor((1350 * analyser.fftSize) / audio.sampleRate);
+  const max = Math.min(bins.length - 1, Math.ceil((2600 * analyser.fftSize) / audio.sampleRate));
+  for (let index = min; index <= max; index++) {
+    const value = bins[index] ?? -Infinity;
     if (value > bestDb) {
       bestDb = value;
       bestIndex = index;
     }
   }
-  return {
-    frequency: (bestIndex * context.sampleRate) / analyserNode.fftSize,
-    strength: bestDb,
-  };
+  const frequency = (bestIndex * audio.sampleRate) / analyser.fftSize;
+  let command: Command | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const [candidate, tone] of Object.entries(TONES) as [Command, number][]) {
+    const delta = Math.abs(tone - frequency);
+    if (delta < distance) {
+      distance = delta;
+      command = candidate;
+    }
+  }
+  return { command: bestDb > -48 && distance <= 90 ? command : null, frequency };
 }
 
-function applyHeardCommand(command: Command): void {
+function applyCommand(command: Command): void {
   const now = performance.now();
-  if (lastHeardCommand === command && now - lastHeardCommandAt < COMMAND_COOLDOWN_MS) return;
-  lastHeardCommand = command;
-  lastHeardCommandAt = now;
+  if (lastHeard === command && now - lastHeardAt < 900) return;
+  lastHeard = command;
+  lastHeardAt = now;
   if (command === "slower") {
-    rebuildSenderEncoder(senderProfile - 1);
-    feedbackStat.textContent = `Receiver asked to slow down → ${PROFILES[senderProfile].name}.`;
+    rebuildSender(profileIndex - 1);
+    feedbackStat.textContent = `Receiver asked to slow down → ${PROFILES[profileIndex].name}.`;
   } else if (command === "faster") {
-    rebuildSenderEncoder(senderProfile + 1);
-    feedbackStat.textContent = `Receiver says the link is healthy → ${PROFILES[senderProfile].name}.`;
+    rebuildSender(profileIndex + 1);
+    feedbackStat.textContent = `Receiver says the link is healthy → ${PROFILES[profileIndex].name}.`;
   } else if (command === "hold") {
     feedbackStat.textContent = "Receiver asked to hold this profile.";
   } else {
@@ -289,20 +280,19 @@ function applyHeardCommand(command: Command): void {
   }
 }
 
-function listenForFeedback(gen: number): void {
-  const loop = () => {
-    if (!sendRunning || gen !== generation || !analyser || !audioContext) return;
-    const { frequency, strength } = dominantFrequency(analyser, audioContext);
-    const command = strength > -48 ? closestCommand(frequency) : null;
-    if (command) {
-      audioStat.textContent = `${command} · ${Math.round(frequency)} Hz`;
-      applyHeardCommand(command);
+function feedbackListenLoop(gen: number): void {
+  const tick = () => {
+    if (!sendRunning || gen !== generation) return;
+    const heard = dominantTone();
+    if (heard.command) {
+      audioStat.textContent = `${heard.command} · ${Math.round(heard.frequency)} Hz`;
+      applyCommand(heard.command);
     } else {
       audioStat.textContent = "Listening";
     }
-    requestAnimationFrame(loop);
+    requestAnimationFrame(tick);
   };
-  requestAnimationFrame(loop);
+  requestAnimationFrame(tick);
 }
 
 async function startSender(): Promise<void> {
@@ -319,30 +309,27 @@ async function startSender(): Promise<void> {
   startSend.disabled = true;
   setStatus("Preparing file and opening the microphone for feedback…");
   try {
-    const packed = await packFile(file.name, file.type, new Uint8Array(await file.arrayBuffer()));
+    payload = (await packFile(file.name, file.type, new Uint8Array(await file.arrayBuffer()))).container;
     if (gen !== generation) return;
-    senderPayload = packed.container;
-    senderName = file.name;
-    senderMime = file.type || "application/octet-stream";
-    microphoneStream = await navigator.mediaDevices.getUserMedia({
+    mic = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       video: false,
     });
-    audioContext = new AudioContext({ latencyHint: "interactive" });
-    await audioContext.resume();
-    const source = audioContext.createMediaStreamSource(microphoneStream);
-    analyser = audioContext.createAnalyser();
+    audio = new AudioContext({ latencyHint: "interactive" });
+    await audio.resume();
+    const source = audio.createMediaStreamSource(mic);
+    analyser = audio.createAnalyser();
     analyser.fftSize = 4096;
     analyser.smoothingTimeConstant = 0.35;
     source.connect(analyser);
     sendRunning = true;
-    senderProfile = 1;
-    rebuildSenderEncoder(senderProfile);
+    profileIndex = 1;
+    rebuildSender(profileIndex);
     startSend.disabled = false;
     startSend.textContent = "Stop transfer";
-    setStatus(`Streaming ${senderName}. The microphone is listening only for the receiver's feedback tones.`);
-    startQrLoop(gen);
-    listenForFeedback(gen);
+    setStatus(`Streaming ${file.name}. The microphone is listening only for the receiver's feedback tones.`);
+    qrLoop(gen);
+    feedbackListenLoop(gen);
     await requestScreenWakeLock();
   } catch (error) {
     stopSender(false);
@@ -353,14 +340,14 @@ async function startSender(): Promise<void> {
 function stopSender(userInitiated: boolean): void {
   generation++;
   sendRunning = false;
-  microphoneStream?.getTracks().forEach((track) => track.stop());
-  microphoneStream = null;
+  payload = null;
+  encoder = null;
+  header = null;
+  mic?.getTracks().forEach((track) => track.stop());
+  mic = null;
   analyser = null;
-  void audioContext?.close();
-  audioContext = null;
-  senderEncoder = null;
-  senderHeader = null;
-  senderPayload = null;
+  void audio?.close();
+  audio = null;
   startSend.disabled = false;
   startSend.textContent = "Start adaptive transfer";
   streamStat.textContent = "Idle";
@@ -369,80 +356,72 @@ function stopSender(userInitiated: boolean): void {
   if (userInitiated) setStatus("Stopped. Choose a file and start again when ready.");
 }
 
-startSend.addEventListener("click", () => void startSender());
-
 async function emitTone(command: Command): Promise<void> {
-  if (!audioContext || audioContext.state === "closed") return;
-  const now = audioContext.currentTime;
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
+  if (!audio || audio.state === "closed") return;
+  const now = audio.currentTime;
+  const oscillator = audio.createOscillator();
+  const gain = audio.createGain();
   oscillator.type = "sine";
-  oscillator.frequency.value = AUDIO_COMMANDS[command];
+  oscillator.frequency.value = TONES[command];
   gain.gain.setValueAtTime(0.0001, now);
   gain.gain.exponentialRampToValueAtTime(0.16, now + 0.015);
-  gain.gain.setValueAtTime(0.16, now + COMMAND_DURATION_MS / 1000 - 0.025);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + COMMAND_DURATION_MS / 1000);
-  oscillator.connect(gain).connect(audioContext.destination);
+  gain.gain.setValueAtTime(0.16, now + TONE_MS / 1000 - 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + TONE_MS / 1000);
+  oscillator.connect(gain).connect(audio.destination);
   oscillator.start(now);
-  oscillator.stop(now + COMMAND_DURATION_MS / 1000 + 0.02);
+  oscillator.stop(now + TONE_MS / 1000 + 0.02);
   audioStat.textContent = `Sent ${command}`;
   feedbackStat.textContent = `Sent “${command}” to the sender over sound.`;
-  await new Promise((resolve) => setTimeout(resolve, COMMAND_DURATION_MS + COMMAND_GAP_MS));
+  await new Promise((resolve) => setTimeout(resolve, TONE_MS + 120));
 }
 
 function chooseReceiverCommand(): Command | null {
   const now = performance.now();
-  if (receiverCompleted) return "done";
-  if (!receiverDecoder || receiverFrames < 5) return null;
-  if (now - receiverLastCommandAt < 1800) return null;
-  const framesDelta = receiverFrames - receiverLastFrames;
-  const elapsed = Math.max(0.5, (now - receiverLastProgressAt) / 1000);
-  const rate = framesDelta / elapsed;
+  if (completed) return "done";
+  if (!decoder || receiverFrames < 5 || now - receiverLastCommandAt < 1800) return null;
+  const frameDelta = receiverFrames - receiverLastFrames;
+  const elapsed = Math.max(0.5, (now - receiverLastSampleAt) / 1000);
+  const rate = frameDelta / elapsed;
   receiverLastFrames = receiverFrames;
-  receiverLastProgressAt = now;
+  receiverLastSampleAt = now;
   receiverLastCommandAt = now;
   if (rate < 1.2) return "slower";
-  if (rate > 8 && receiverDecoder.framesNew > 14) return "faster";
+  if (rate > 8 && decoder.framesNew > 14) return "faster";
   return "hold";
 }
 
-function updateReceiverProgress(): void {
-  if (!receiverDecoder) return;
-  const targetFrames = Math.max(receiverDecoder.k + 2, Math.ceil(receiverDecoder.k * 1.18));
-  const percent = Math.min(99, (receiverDecoder.framesNew / targetFrames) * 100);
-  progressBar.setAttribute("style", `width: ${percent.toFixed(1)}%`);
-  progressLabel.textContent = `${percent.toFixed(0)}% · ${receiverDecoder.framesNew} useful frames · ${receiverDecoder.solvedCount}/${receiverDecoder.k} blocks solved`;
+function updateProgress(): void {
+  if (!decoder) return;
+  const target = Math.max(decoder.k + 2, Math.ceil(decoder.k * 1.18));
+  const percent = Math.min(99, (decoder.framesNew / target) * 100);
+  progressBar.style.width = `${percent.toFixed(1)}%`;
+  progressLabel.textContent = `${percent.toFixed(0)}% · ${decoder.framesNew} useful frames · ${decoder.solvedCount}/${decoder.k} blocks solved`;
 }
 
 async function onDecoded(bytes: Uint8Array): Promise<void> {
   const parsed = parseFrame(bytes);
-  if (!parsed || receiverCompleted) return;
+  if (!parsed || completed) return;
   receiverLastDecodedAt = performance.now();
   const identity = streamIdentity(parsed.header);
-  if (!receiverDecoder || receiverIdentity !== identity) {
-    receiverDecoder = new LTDecoder(
-      parsed.header.k,
-      parsed.header.blockLen,
-      parsed.header.sessionId,
-      parsed.header.totalLen,
-    );
+  if (!decoder || receiverIdentity !== identity) {
+    decoder = new LTDecoder(parsed.header.k, parsed.header.blockLen, parsed.header.sessionId, parsed.header.totalLen);
     receiverHeader = parsed.header;
     receiverIdentity = identity;
     receiverFrames = 0;
     receiverLastFrames = 0;
-    receiverLastProgressAt = performance.now();
+    receiverLastSampleAt = performance.now();
     streamStat.textContent = `Locked · K=${parsed.header.k}`;
   }
   receiverFrames++;
-  receiverDecoder.addFrame(parsed.header.seq, parsed.block);
-  updateReceiverProgress();
+  decoder.addFrame(parsed.header.seq, parsed.block);
+  updateProgress();
   const command = chooseReceiverCommand();
   if (command) void emitTone(command);
-  if (!receiverDecoder.isComplete || !receiverHeader) return;
-  const container = receiverDecoder.assemble();
+  if (!decoder.isComplete || !receiverHeader) return;
+  const container = decoder.assemble();
   if (!container || fnv1a(container) !== receiverHeader.payloadFnv) return;
-  receiverCompleted = true;
-  progressBar.setAttribute("style", "width: 100%");
+  completed = true;
+  progressBar.style.width = "100%";
   progressLabel.textContent = "100% · optical payload reconstructed";
   try {
     const file = await unpackFile(container);
@@ -488,7 +467,7 @@ function captureLoop(gen: number): void {
       if (!receiveRunning || gen !== generation) return;
       const width = video.videoWidth;
       const height = video.videoHeight;
-      if (!workerBusy && width && height && scanWorker) {
+      if (!workerBusy && width && height && worker) {
         const side = Math.floor(Math.min(width, height) * 0.92);
         const x = Math.floor((width - side) / 2);
         const y = Math.floor((height - side) / 2);
@@ -502,7 +481,7 @@ function captureLoop(gen: number): void {
         ctx.drawImage(video, x, y, side, side, 0, 0, target, target);
         const image = ctx.getImageData(0, 0, target, target);
         workerBusy = true;
-        scanWorker.postMessage({ id: frameId++, buf: image.data.buffer, w: target, h: target }, [image.data.buffer]);
+        worker.postMessage({ id: frameId++, buf: image.data.buffer, w: target, h: target }, [image.data.buffer]);
       }
       schedule();
     };
@@ -513,11 +492,14 @@ function captureLoop(gen: number): void {
   schedule();
 }
 
-function receiverHealthLoop(gen: number): void {
+function healthLoop(gen: number): void {
   const tick = () => {
-    if (!receiveRunning || gen !== generation || receiverCompleted) return;
-    const age = performance.now() - receiverLastDecodedAt;
-    if (receiverDecoder && age > 2500 && performance.now() - receiverLastCommandAt > 1800) {
+    if (!receiveRunning || gen !== generation || completed) return;
+    if (
+      decoder &&
+      performance.now() - receiverLastDecodedAt > 2500 &&
+      performance.now() - receiverLastCommandAt > 1800
+    ) {
       receiverLastCommandAt = performance.now();
       void emitTone("slower");
     }
@@ -532,14 +514,14 @@ async function startReceiver(): Promise<void> {
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus("Camera and microphone APIs are unavailable in this browser.", true);
+    setStatus("Camera APIs are unavailable in this browser.", true);
     return;
   }
   const gen = ++generation;
   startReceive.disabled = true;
   setStatus("Opening the camera and preparing the speaker feedback channel…");
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
+    camera = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
         facingMode: { ideal: "environment" },
@@ -549,26 +531,26 @@ async function startReceiver(): Promise<void> {
       },
     });
     if (gen !== generation) return;
-    video.srcObject = cameraStream;
+    video.srcObject = camera;
     await video.play();
-    audioContext = new AudioContext({ latencyHint: "interactive" });
-    await audioContext.resume();
-    scanWorker = new Worker(new URL("../receive/worker.ts", import.meta.url), { type: "module" });
-    scanWorker.onmessage = (event: MessageEvent) => {
+    audio = new AudioContext({ latencyHint: "interactive" });
+    await audio.resume();
+    worker = new Worker(new URL("../receive/worker.ts", import.meta.url), { type: "module" });
+    worker.onmessage = (event: MessageEvent) => {
       const message = event.data as { id: number; bytes: Uint8Array | null };
       if (message.id === -1) return;
       workerBusy = false;
       if (message.bytes) void onDecoded(message.bytes);
     };
-    receiverDecoder = null;
+    decoder = null;
     receiverHeader = null;
     receiverIdentity = "";
     receiverFrames = 0;
     receiverLastFrames = 0;
-    receiverLastProgressAt = performance.now();
+    receiverLastSampleAt = performance.now();
     receiverLastCommandAt = 0;
     receiverLastDecodedAt = performance.now();
-    receiverCompleted = false;
+    completed = false;
     receiveRunning = true;
     startReceive.disabled = false;
     startReceive.textContent = "Stop receiver";
@@ -577,7 +559,7 @@ async function startReceiver(): Promise<void> {
     audioStat.textContent = "Ready to signal";
     setStatus("Point the camera at the sender. Feedback tones are automatic once frames start arriving.");
     captureLoop(gen);
-    receiverHealthLoop(gen);
+    healthLoop(gen);
     await requestScreenWakeLock();
   } catch (error) {
     stopReceiver(false);
@@ -586,12 +568,12 @@ async function startReceiver(): Promise<void> {
 }
 
 function stopReceiverCapture(): void {
-  cameraStream?.getTracks().forEach((track) => track.stop());
-  cameraStream = null;
+  camera?.getTracks().forEach((track) => track.stop());
+  camera = null;
   video.pause();
   video.srcObject = null;
-  scanWorker?.terminate();
-  scanWorker = null;
+  worker?.terminate();
+  worker = null;
   workerBusy = false;
   receiveRunning = false;
   startReceive.disabled = false;
@@ -601,22 +583,23 @@ function stopReceiverCapture(): void {
 function stopReceiver(userInitiated: boolean): void {
   generation++;
   stopReceiverCapture();
-  void audioContext?.close();
-  audioContext = null;
-  receiverDecoder = null;
+  void audio?.close();
+  audio = null;
+  decoder = null;
   receiverHeader = null;
   receiverIdentity = "";
-  receiverCompleted = false;
+  completed = false;
   streamStat.textContent = "Idle";
   audioStat.textContent = "Idle";
   if (userInitiated) {
-    progressBar.setAttribute("style", "width: 0%");
+    progressBar.style.width = "0%";
     progressLabel.textContent = "0% · waiting for optical frames";
     setStatus("Stopped. Start again when the sender is ready.");
   }
 }
 
+roleSend.addEventListener("click", () => setRole("send"));
+roleReceive.addEventListener("click", () => setRole("receive"));
+startSend.addEventListener("click", () => void startSender());
 startReceive.addEventListener("click", () => void startReceiver());
-
-void senderMime;
 drawIdle();
