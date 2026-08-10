@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Optical Voice — acoustic backchannel prototype</title>
+    <meta name="description" content="Experimental optical file transfer with a sound-based feedback channel." />
+    <meta name="theme-color" content="#070a11" />
+    <link rel="icon" href="../decimen_logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      .adaptive-shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 38px 0 64px; }
+      .adaptive-intro { display: grid; gap: 10px; margin-bottom: 24px; }
+      .adaptive-intro h1 { margin: 0; font-size: clamp(2.2rem, 7vw, 4.8rem); line-height: .95; }
+      .adaptive-intro p { max-width: 780px; margin: 0; color: var(--muted); }
+      .prototype-pill { width: fit-content; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .role-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 20px 0; }
+      .role-picker button, .adaptive-button { border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; background: transparent; color: inherit; font: inherit; font-weight: 750; cursor: pointer; }
+      .role-picker button.active, .adaptive-button.primary { background: #fff; color: #070a11; }
+      .adaptive-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(290px, .65fr); gap: 18px; align-items: start; }
+      .adaptive-stage, .adaptive-panel { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+      .adaptive-stage { min-height: 520px; padding: 18px; display: grid; place-items: center; overflow: hidden; }
+      .adaptive-panel { padding: 20px; display: grid; gap: 18px; }
+      .adaptive-panel h2 { margin: 0; font-size: 1.1rem; }
+      .adaptive-actions { display: grid; gap: 10px; }
+      .adaptive-status { margin: 0; min-height: 48px; color: var(--muted); line-height: 1.45; }
+      .adaptive-status.error { color: #ff9d9d; }
+      #qr { display: block; max-width: 100%; background: white; border-radius: 12px; }
+      .camera-wrap { width: min(100%, 760px); display: grid; gap: 12px; }
+      #video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 16px; background: #111; }
+      .progress-track { height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,.08); }
+      #progress-bar { width: 0%; height: 100%; background: currentColor; transition: width .15s linear; }
+      .stat-list { display: grid; gap: 0; }
+      .stat-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); color: var(--muted); }
+      .stat-row strong { color: var(--text); text-align: right; }
+      .feedback-log { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; min-height: 86px; }
+      .feedback-log p { margin: 0; color: var(--muted); font-size: .84rem; }
+      .file-input { display: grid; gap: 7px; }
+      .file-input input { width: 100%; }
+      .received { max-width: 100%; border-radius: 12px; }
+      .received-actions { display: grid; gap: 8px; }
+      .received-actions a { display: inline-flex; justify-content: center; text-decoration: none; }
+      [hidden] { display: none !important; }
+      @media (max-width: 860px) { .adaptive-grid { grid-template-columns: 1fr; } .adaptive-stage { min-height: 390px; } }
+      @media (max-width: 600px) { .adaptive-shell { width: min(100% - 20px, 1180px); padding-top: 22px; } .role-picker { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body class="tool-page">
+    <header class="site-header">
+      <a class="brand" href="../">Optical Voice</a>
+      <nav class="mode-nav" aria-label="Mode">
+        <a href="../talk/">Talk</a>
+        <a href="./" aria-current="page">Adaptive</a>
+        <a href="../send/">Files</a>
+      </nav>
+    </header>
+
+    <main class="adaptive-shell">
+      <section class="adaptive-intro">
+        <span class="prototype-pill">Prototype · light + sound</span>
+        <h1>Let the receiver talk back.</h1>
+        <p>
+          The file still travels screen → camera. A tiny acoustic return channel tells the sender
+          when to slow down, simplify the QR stream, speed back up, or stop after verification.
+        </p>
+      </section>
+
+      <div class="role-picker" aria-label="Choose this device's role">
+        <button id="role-send" class="active" type="button">This device sends the file</button>
+        <button id="role-receive" type="button">This device receives the file</button>
+      </div>
+
+      <div class="adaptive-grid">
+        <section class="adaptive-stage">
+          <div id="send-stage" class="camera-wrap">
+            <canvas id="qr" width="420" height="420"></canvas>
+          </div>
+          <div id="receive-stage" class="camera-wrap" hidden>
+            <video id="video" muted playsinline></video>
+            <div class="progress-track" role="progressbar" aria-label="Transfer progress" aria-valuemin="0" aria-valuemax="100">
+              <div id="progress-bar"></div>
+            </div>
+            <p id="progress-label" class="adaptive-status">0% · waiting for optical frames</p>
+            <div id="received-result"></div>
+          </div>
+        </section>
+
+        <aside class="adaptive-panel">
+          <h2 id="panel-title">Adaptive sender</h2>
+          <p id="status" class="adaptive-status">Choose a file, then start. Keep the receiving device close enough to hear feedback tones.</p>
+
+          <div id="sender-controls" class="adaptive-actions">
+            <label class="file-input">
+              <span>File</span>
+              <input id="file" type="file" />
+            </label>
+            <button id="start-send" class="adaptive-button primary" type="button">Start adaptive transfer</button>
+          </div>
+
+          <div id="receiver-controls" class="adaptive-actions" hidden>
+            <button id="start-receive" class="adaptive-button primary" type="button">Start camera + feedback</button>
+          </div>
+
+          <div class="stat-list" aria-label="Prototype statistics">
+            <div class="stat-row"><span>Optical profile</span><strong id="profile-stat">Balanced</strong></div>
+            <div class="stat-row"><span>QR stream</span><strong id="stream-stat">Idle</strong></div>
+            <div class="stat-row"><span>Acoustic channel</span><strong id="audio-stat">Idle</strong></div>
+          </div>
+
+          <div class="feedback-log" aria-live="polite">
+            <p><strong>Sound commands</strong></p>
+            <p id="feedback-stat">No feedback yet.</p>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <span class="footer-id"><span>Optical Voice</span><span>Acoustic backchannel prototype · Harold Ponte da Costa · based on Decimen · MIT</span></span>
+      <nav class="footer-links" aria-label="Project links"><a href="https://github.com/ItzHarold/optical-voice">GitHub</a></nav>
+    </footer>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
